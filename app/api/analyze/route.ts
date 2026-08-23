@@ -87,13 +87,13 @@ export async function POST(req: NextRequest) {
       process.env.LLM_BASE_URL ||
       process.env.OPENAI_BASE_URL ||
       "https://api.groq.com/openai/v1";
-    const textModel = process.env.LLM_MODEL || "llama-3.1-8b-instant";
-    const fallbackTextModel = "llama-3.1-8b-instant";
+    const textModel = process.env.LLM_MODEL || "openai/gpt-oss-120b";
+    const fallbackTextModel = "openai/gpt-oss-20b";
 
     const visionModels = [
-      process.env.VISION_MODEL || "llama-3.2-11b-vision-preview",
+      process.env.VISION_MODEL || "qwen/qwen3.6-27b",
+      "llama-3.2-11b-vision-preview",
       "llama-3.2-90b-vision-preview",
-      "qwen/qwen3.6-27b",
     ];
 
     let conversationText = (messages || "").trim();
