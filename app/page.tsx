@@ -1000,7 +1000,7 @@ export default function DecodedApp() {
           <div className="flex items-center gap-2.5">
             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             <span className="font-mono text-xs tracking-wide">
-              DECODING WITH MARK MANSON FRAMEWORK...
+              DECODING CONVERSATION DYNAMICS...
             </span>
           </div>
         ) : (
@@ -1088,7 +1088,7 @@ export default function DecodedApp() {
             >
               <div className="flex items-center gap-2 text-xs font-bold tracking-wider font-mono text-blue-400 uppercase">
                 <Sparkles className="w-4 h-4" />
-                <span>Psychological Subtext (Manson Analysis)</span>
+                <span>Psychological Subtext</span>
               </div>
               <p className="text-sm sm:text-base leading-relaxed text-zinc-200 font-normal">
                 &ldquo;{analysis.subtext}&rdquo;

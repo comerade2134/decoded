@@ -7,7 +7,7 @@
 [![Framer Motion](https://img.shields.io/badge/Framer_Motion-13-ff0055?style=flat-square&logo=framer)](https://www.framer.com/motion/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald?style=flat-square)](LICENSE)
 
-> A high-EQ behavioral psychology & texting subtext analyzer powered by Mark Manson's non-neediness framework and Groq Cloud ultra-fast inference.
+> An elite behavioral psychology & texting subtext analyzer engineered with radical honesty, non-neediness principles, and ultra-fast inference.
 
 ---
 
@@ -28,7 +28,7 @@
 - Automatically detects severe effort mismatch, dry responses, or fading dynamics.
 - Delivers a dedicated **Walk-Away Play** with explicit dignity rules and re-engagement triggers.
 
-### 4. Mark Manson Behavioral Architecture
+### 4. High-EQ Behavioral Psychology Engine
 - Built on radical honesty, non-neediness, and outcome independence (*"Fuck Yes or No"*).
 - Enforces authentic human syntax: strictly 5–12 words, zero emojis, and zero pickup artist clichés.
 
