@@ -59,10 +59,12 @@ export interface AnalysisResponse {
   boldPlay: BoldPlay;
   walkAwayOption?: WalkAwayOption;
   trajectory?: Trajectory;
+  transcribedText?: string;
 }
 
 export interface AnalysisRequest {
-  messages: string;
+  messages?: string;
+  imageBase64?: string;
   relationshipContext?: RelationshipContext | string;
   userVoiceProfile?: UserVoiceProfile;
   contactHistoryCount?: number;
@@ -79,7 +81,7 @@ export interface AnalysisRecord {
 export interface ContactDossier {
   id: string;
   name: string;
-  tag?: string; // e.g. "Hinge", "Bumble", "Met at event", "Ex"
+  tag?: string;
   context: RelationshipContext;
   createdAt: number;
   history: AnalysisRecord[];

@@ -5,7 +5,6 @@ import {
   DynamicStatus,
   EnergyLevel,
   UserVoiceProfile,
-  WalkAwayOption,
 } from "@/lib/types";
 
 export const runtime = "edge";
@@ -28,27 +27,84 @@ const VALID_ENERGY_LEVELS: EnergyLevel[] = [
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as AnalysisRequest;
-    const { messages, relationshipContext, userVoiceProfile } = body;
+    const { messages, imageBase64, relationshipContext, userVoiceProfile } = body;
 
-    if (!messages || typeof messages !== "string" || messages.trim().length === 0) {
-      return NextResponse.json(
-        { error: "Please provide a valid conversation snippet to analyze." },
-        { status: 400 }
-      );
-    }
-
-    const apiKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY;
+    const apiKey =
+      process.env.LLM_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.GROQ_API_KEY;
     const baseUrl =
       process.env.LLM_BASE_URL ||
       process.env.OPENAI_BASE_URL ||
       "https://api.groq.com/openai/v1";
-    const model =
+    const textModel =
       process.env.LLM_MODEL ||
       (baseUrl.includes("groq.com") ? "openai/gpt-oss-120b" : "gpt-4o-mini");
+    const visionModel = "qwen/qwen3.6-27b";
 
-    // If no API key is provided, use built-in Manson psychological heuristics engine
+    let conversationText = (messages || "").trim();
+
+    // 1. REAL VISION OCR PIPELINE
+    if (imageBase64 && imageBase64.startsWith("data:image/")) {
+      if (apiKey) {
+        try {
+          const visionResponse = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: visionModel,
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: "You are an expert OCR transcription engine. Accurately transcribe all visible chat messages, senders, and timestamps from this screenshot regardless of language (e.g. German, English, Spanish, Arabic). Return ONLY the transcribed text dialogue, without pleasantries.",
+                    },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: imageBase64,
+                      },
+                    },
+                  ],
+                },
+              ],
+              temperature: 0.1,
+              max_tokens: 800,
+            }),
+          });
+
+          if (visionResponse.ok) {
+            const visionData = await visionResponse.json();
+            const rawTranscribed = visionData.choices?.[0]?.message?.content || "";
+            const cleanedTranscribed = rawTranscribed
+              .replace(/<think>[\s\S]*?<\/think>/gi, "")
+              .trim();
+            if (cleanedTranscribed.length > 0) {
+              conversationText = cleanedTranscribed;
+            }
+          }
+        } catch (visionErr) {
+          console.error("Vision OCR Error:", visionErr);
+        }
+      }
+    }
+
+    if (!conversationText || conversationText.length === 0) {
+      return NextResponse.json(
+        { error: "Please provide a valid conversation snippet or upload a readable screenshot." },
+        { status: 400 }
+      );
+    }
+
+    // If no API key is provided, use built-in psychological heuristics engine
     if (!apiKey) {
-      const mockResult = generateIntelligentFallback(messages, relationshipContext, userVoiceProfile);
+      const mockResult = generateIntelligentFallback(conversationText, relationshipContext, userVoiceProfile);
+      mockResult.transcribedText = conversationText;
       return NextResponse.json(mockResult, { status: 200 });
     }
 
@@ -133,7 +189,7 @@ Respond with valid, raw JSON only matching this exact schema:
     const userPrompt = `Relationship Context: ${relationshipContext || "Not specified / Early dating"}
 Conversation Snippet:
 """
-${messages}
+${conversationText}
 """
 
 Analyze this snippet with psychological accuracy and generate the structured JSON payload.`;
@@ -145,7 +201,7 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: textModel,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -158,8 +214,8 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Upstream LLM error:", response.status, errorText);
-      // Fallback seamlessly if the provider failed
-      const fallbackResult = generateIntelligentFallback(messages, relationshipContext, userVoiceProfile);
+      const fallbackResult = generateIntelligentFallback(conversationText, relationshipContext, userVoiceProfile);
+      fallbackResult.transcribedText = conversationText;
       return NextResponse.json(fallbackResult, { status: 200 });
     }
 
@@ -170,7 +226,6 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
       throw new Error("Empty response from LLM");
     }
 
-    // Clean any markdown formatting if present
     const cleanedJson = rawContent
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/i, "")
@@ -179,7 +234,6 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
 
     const parsed = JSON.parse(cleanedJson) as Partial<AnalysisResponse>;
 
-    // Enforce all-lowercase if requested
     let safeReply = parsed.safePlay?.reply || "haha all good, catch you around";
     let boldReply = parsed.boldPlay?.reply || "let's skip the small talk. drink this week?";
     if (userVoiceProfile?.styleToggles?.allLowercase) {
@@ -187,7 +241,6 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
       boldReply = boldReply.toLowerCase();
     }
 
-    // Validate and sanitize response
     const sanitizedResponse: AnalysisResponse = {
       subtext: parsed.subtext || "They are giving minimal effort to keep the channel open without committing real energy or emotional exposure.",
       status: VALID_STATUSES.includes(parsed.status as DynamicStatus)
@@ -226,12 +279,12 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
                 reEngagementCondition: "Do not text again until they initiate with a specific question or concrete plan.",
               }
             : undefined),
+      transcribedText: conversationText,
     };
 
     return NextResponse.json(sanitizedResponse, { status: 200 });
   } catch (error) {
     console.error("Analysis route error:", error);
-    // Provide a resilient fallback response on unhandled runtime exception
     try {
       const fallback = generateIntelligentFallback("General conversation analysis", "Talking Stage", undefined);
       return NextResponse.json(fallback, { status: 200 });
@@ -355,7 +408,6 @@ function generateIntelligentFallback(
     };
   }
 
-  // Default balanced analysis
   return {
     subtext:
       "They are maintaining subtle plausible deniability. The message balances warmth with cautious detachment to see if you will over-invest and lead.",

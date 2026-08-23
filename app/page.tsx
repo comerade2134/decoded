@@ -34,12 +34,9 @@ import {
   UserPlus,
   Users,
   Mic,
-  Sliders,
   History,
   Trash2,
-  Tag,
   Info,
-  CheckCircle2,
   Ban,
 } from "lucide-react";
 import {
@@ -92,11 +89,11 @@ const SAMPLE_PRESETS: SamplePreset[] = [
 ];
 
 const SCANNER_PHRASES = [
+  "Running multimodal Vision OCR...",
   "Calibrating to your personal voiceprint...",
   "Parsing message latency & cadence...",
   "Evaluating frame & power dynamics...",
   "Calculating Reciprocity & Dignity index...",
-  "Simulating internal monologue...",
   "Synthesizing Safe, Bold & Walk-Away plays...",
 ];
 
@@ -129,7 +126,7 @@ const DEFAULT_CONTACTS: ContactDossier[] = [
   },
 ];
 
-// Apple & Emil Kowalski spring configurations
+// Apple & Emil Kowalski lightweight GPU spring configurations
 const springTransition: Transition = {
   type: "spring",
   stiffness: 420,
@@ -141,22 +138,21 @@ const resultContainerVariants: Variants = {
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.08,
-      delayChildren: 0.04,
+      staggerChildren: 0.06,
+      delayChildren: 0.02,
     },
   },
 };
 
 const resultItemVariants: Variants = {
-  hidden: { opacity: 0, y: 12, scale: 0.98 },
+  hidden: { opacity: 0, y: 10 },
   visible: {
     opacity: 1,
     y: 0,
-    scale: 1,
     transition: {
       type: "spring",
-      stiffness: 360,
-      damping: 26,
+      stiffness: 380,
+      damping: 28,
     },
   },
 };
@@ -170,6 +166,50 @@ function calculateTrajectory(history: AnalysisRecord[], currentStatus?: DynamicS
   if (latest === "Leading") return "Accelerating Interest";
   if (latest === "Fading" || latest === "Chasing") return "Decelerating / Frame Loss";
   return "Stable / Plateau";
+}
+
+// Compress image to max 1024px width/height and quality 0.8
+function compressImageToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_WIDTH = 1024;
+        const MAX_HEIGHT = 1024;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(readerEvent.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = readerEvent.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function DecodedApp() {
@@ -194,11 +234,11 @@ export default function DecodedApp() {
   const [voiceProfile, setVoiceProfile] = useState<UserVoiceProfile>(DEFAULT_VOICE_PROFILE);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
 
-  // OCR Upload State
+  // Real Multimodal OCR Upload State
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedBase64, setUploadedBase64] = useState<string | null>(null);
   const [imageFileName, setImageFileName] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [isExtractingOcr, setIsExtractingOcr] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Expandable reasoning accordion state
@@ -258,7 +298,6 @@ export default function DecodedApp() {
     const target = contacts.find((c) => c.id === contactId);
     if (target) {
       setSelectedContext(target.context);
-      // If contact has previous scan, load latest result
       if (target.history.length > 0) {
         const latest = target.history[target.history.length - 1];
         setAnalysis(latest.response);
@@ -293,7 +332,7 @@ export default function DecodedApp() {
   };
 
   const handleDeleteContact = (contactId: string) => {
-    if (contactId === "quick-scan") return; // Prevent deleting default
+    if (contactId === "quick-scan") return;
     setContacts((prev) => prev.filter((c) => c.id !== contactId));
     if (activeContactId === contactId) {
       setActiveContactId("quick-scan");
@@ -318,36 +357,28 @@ export default function DecodedApp() {
       setScanStepIndex(0);
       interval = setInterval(() => {
         setScanStepIndex((prev) => (prev + 1) % SCANNER_PHRASES.length);
-      }, 1100);
+      }, 950);
     }
     return () => clearInterval(interval);
   }, [loading]);
 
-  // Handle Image Selection
-  const processImageFile = useCallback((file: File) => {
+  // Process Real Image File
+  const processImageFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
       setError("Please select a valid image file (PNG, JPG, WebP).");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      setUploadedImage(result);
+    try {
+      const compressedDataUrl = await compressImageToBase64(file);
+      setUploadedImage(compressedDataUrl);
+      setUploadedBase64(compressedDataUrl);
       setImageFileName(file.name);
-      setIsExtractingOcr(true);
       setError(null);
-
-      // OCR Extraction simulation & text mapping
-      setTimeout(() => {
-        setIsExtractingOcr(false);
-        setMessages(
-          `Them [Screenshot: ${file.name}]: "Hey! Just saw your message, super crazy day at work today haha"`
-        );
-        setActiveTab("text");
-      }, 1200);
-    };
-    reader.readAsDataURL(file);
+    } catch (e) {
+      console.error(e);
+      setError("Could not process image. Please try another screenshot.");
+    }
   }, []);
 
   // Global Clipboard Paste Listener (Ctrl+V / Cmd+V screenshot support)
@@ -361,6 +392,7 @@ export default function DecodedApp() {
           const file = items[i].getAsFile();
           if (file) {
             processImageFile(file);
+            setActiveTab("ocr");
             break;
           }
         }
@@ -389,8 +421,8 @@ export default function DecodedApp() {
   };
 
   const handleAnalyze = async () => {
-    if (!messages.trim()) {
-      setError("Please paste a text snippet or select a scenario preset to analyze.");
+    if (!messages.trim() && !uploadedBase64) {
+      setError("Please paste a text snippet or upload a chat screenshot to analyze.");
       return;
     }
 
@@ -400,7 +432,8 @@ export default function DecodedApp() {
 
     try {
       const payload: AnalysisRequest = {
-        messages: messages.trim(),
+        messages: messages.trim() || undefined,
+        imageBase64: uploadedBase64 || undefined,
         relationshipContext: selectedContext,
         userVoiceProfile: voiceProfile,
         contactHistoryCount: activeContact?.history.length || 0,
@@ -419,11 +452,16 @@ export default function DecodedApp() {
       const data = (await res.json()) as AnalysisResponse;
       setAnalysis(data);
 
+      // If Vision OCR transcribed the conversation, populate text input
+      if (data.transcribedText && (!messages.trim() || activeTab === "ocr")) {
+        setMessages(data.transcribedText);
+      }
+
       // Save to active contact dossier history
       const newRecord: AnalysisRecord = {
         id: `rec-${Date.now()}`,
         timestamp: Date.now(),
-        messages: messages.trim(),
+        messages: data.transcribedText || messages.trim(),
         relationshipContext: selectedContext,
         response: data,
       };
@@ -463,12 +501,16 @@ export default function DecodedApp() {
   const handlePresetSelect = (preset: SamplePreset) => {
     setMessages(preset.messages);
     setSelectedContext(preset.context);
+    setUploadedImage(null);
+    setUploadedBase64(null);
+    setImageFileName(null);
     setError(null);
   };
 
   const handleReset = () => {
     setMessages("");
     setUploadedImage(null);
+    setUploadedBase64(null);
     setImageFileName(null);
     setAnalysis(null);
     setError(null);
@@ -478,7 +520,6 @@ export default function DecodedApp() {
     }
   };
 
-  // Status Badge Helper
   const getStatusBadge = (status: DynamicStatus) => {
     switch (status) {
       case "Leading":
@@ -558,25 +599,16 @@ export default function DecodedApp() {
   }
 
   const TrajectoryIcon = getTrajectoryBadge(activeTrajectory).icon;
+  const canAnalyze = messages.trim().length > 0 || uploadedBase64 !== null;
 
   return (
-    <main className="w-full max-w-2xl lg:max-w-3xl mx-auto min-h-screen px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 ios-safe-top ios-safe-bottom relative">
-      {/* Ambient Lighting Glow */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-gradient-to-b from-blue-500/15 via-indigo-500/10 to-transparent blur-[110px] rounded-full"
-      />
-
+    <main className="w-full max-w-2xl lg:max-w-3xl mx-auto min-h-screen px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 ios-safe-top ios-safe-bottom relative touch-scroll transform-gpu">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-white/[0.08] pb-4 relative z-10">
         <div className="flex items-center gap-3.5">
-          <motion.div
-            whileHover={{ scale: 1.05, rotate: 4 }}
-            whileTap={{ scale: 0.95 }}
-            className="w-11 h-11 rounded-2xl frosted-glass-subtle flex items-center justify-center border-white/[0.12] text-blue-400 shadow-md shadow-blue-500/10"
-          >
+          <div className="w-11 h-11 rounded-2xl frosted-glass-subtle flex items-center justify-center border-white/[0.12] text-blue-400 shadow-md">
             <BrainCircuit className="w-6 h-6" />
-          </motion.div>
+          </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold tracking-tight font-mono text-zinc-100 uppercase">
@@ -594,29 +626,24 @@ export default function DecodedApp() {
 
         {/* Global OS Action Buttons */}
         <div className="flex items-center gap-2">
-          {/* Voice Calibration Trigger */}
-          <motion.button
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => setIsVoiceModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-blue-300 frosted-glass-subtle border-blue-500/30 hover:border-blue-400/50 transition-colors shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-blue-300 frosted-glass-subtle border-blue-500/30 hover:border-blue-400/50 transition-colors shadow-sm active:scale-95 transform-gpu"
             title="Calibrate your authentic texting voiceprint"
           >
             <Mic className="w-3.5 h-3.5 text-blue-400" />
             <span className="hidden sm:inline">Voiceprint</span>
-          </motion.button>
+          </button>
 
           {analysis && (
-            <motion.button
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.95 }}
+            <button
               onClick={handleReset}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-300 hover:text-zinc-100 frosted-glass-subtle border-white/[0.1] hover:border-white/[0.2] transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-300 hover:text-zinc-100 frosted-glass-subtle border-white/[0.1] hover:border-white/[0.2] transition-colors shadow-sm active:scale-95 transform-gpu"
               title="Reset and analyze another message"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
-            </motion.button>
+            </button>
           )}
         </div>
       </header>
@@ -632,7 +659,7 @@ export default function DecodedApp() {
             {activeContact.history.length > 0 && (
               <button
                 onClick={() => setIsHistoryDrawerOpen(true)}
-                className="text-[11px] text-blue-400 hover:text-blue-300 font-mono flex items-center gap-1"
+                className="text-[11px] text-blue-400 hover:text-blue-300 font-mono flex items-center gap-1 active:scale-95"
               >
                 <History className="w-3 h-3" />
                 <span>{activeContact.history.length} Scans</span>
@@ -641,18 +668,16 @@ export default function DecodedApp() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 whitespace-nowrap">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 whitespace-nowrap touch-scroll">
           {contacts.map((contact) => {
             const isActive = contact.id === activeContactId;
             return (
-              <motion.button
+              <button
                 key={contact.id}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
                 onClick={() => handleSelectContact(contact.id)}
-                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border flex items-center gap-2 transition-all relative ${
+                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border flex items-center gap-2 transition-all active:scale-95 transform-gpu ${
                   isActive
-                    ? "bg-blue-600/25 text-blue-200 border-blue-500/70 shadow-sm shadow-blue-500/20 font-semibold"
+                    ? "bg-blue-600/30 text-blue-200 border-blue-500/70 shadow-sm font-semibold"
                     : "frosted-glass-subtle text-zinc-400 border-white/[0.06] hover:border-white/[0.14] hover:text-zinc-200"
                 }`}
               >
@@ -662,25 +687,23 @@ export default function DecodedApp() {
                     {contact.tag}
                   </span>
                 )}
-              </motion.button>
+              </button>
             );
           })}
 
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
+          <button
             onClick={() => setIsNewContactModalOpen(true)}
-            className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-white/[0.16] text-zinc-400 hover:text-zinc-200 hover:border-white/[0.3] flex items-center gap-1.5 transition-colors"
+            className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-white/[0.16] text-zinc-400 hover:text-zinc-200 hover:border-white/[0.3] flex items-center gap-1.5 transition-colors active:scale-95 transform-gpu"
           >
             <UserPlus className="w-3.5 h-3.5 text-blue-400" />
             <span>New Contact</span>
-          </motion.button>
+          </button>
         </div>
 
         {/* Active Contact Dossier Banner */}
         <div className="p-3.5 rounded-xl frosted-glass-subtle flex items-center justify-between border border-white/[0.06] text-xs">
           <div className="flex items-center gap-2.5">
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            <div className="w-2 h-2 rounded-full bg-blue-400" />
             <span className="font-semibold text-zinc-200">{activeContact.name}</span>
             <span className="text-zinc-500 font-mono">({activeContact.tag})</span>
           </div>
@@ -698,7 +721,7 @@ export default function DecodedApp() {
             {activeContact.id !== "quick-scan" && (
               <button
                 onClick={() => handleDeleteContact(activeContact.id)}
-                className="text-zinc-500 hover:text-rose-400 p-1 transition-colors"
+                className="text-zinc-500 hover:text-rose-400 p-1 transition-colors active:scale-95"
                 title="Delete contact dossier"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -708,21 +731,14 @@ export default function DecodedApp() {
         </div>
       </section>
 
-      {/* Fluid Spring Tab Switcher */}
-      <div className="flex items-center p-1 rounded-2xl bg-zinc-950/70 border border-white/[0.06] relative shadow-inner z-10">
+      {/* Fluid Tab Switcher */}
+      <div className="flex items-center p-1 rounded-2xl bg-zinc-950/80 border border-white/[0.06] relative shadow-inner z-10">
         <button
           onClick={() => setActiveTab("text")}
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-medium relative z-10 touch-target transition-colors ${
-            activeTab === "text" ? "text-zinc-100 font-semibold" : "text-zinc-400 hover:text-zinc-200"
+            activeTab === "text" ? "text-zinc-100 font-semibold bg-zinc-800/80 border border-white/[0.12]" : "text-zinc-400 hover:text-zinc-200"
           }`}
         >
-          {activeTab === "text" && (
-            <motion.div
-              layoutId="tab-pill"
-              className="absolute inset-0 rounded-xl frosted-glass bg-zinc-800/70 border-white/[0.16] shadow-sm z-[-1]"
-              transition={springTransition}
-            />
-          )}
           <MessageSquare className="w-4 h-4" />
           <span>Raw Text Snippet</span>
         </button>
@@ -730,18 +746,11 @@ export default function DecodedApp() {
         <button
           onClick={() => setActiveTab("ocr")}
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-medium relative z-10 touch-target transition-colors ${
-            activeTab === "ocr" ? "text-zinc-100 font-semibold" : "text-zinc-400 hover:text-zinc-200"
+            activeTab === "ocr" ? "text-zinc-100 font-semibold bg-zinc-800/80 border border-white/[0.12]" : "text-zinc-400 hover:text-zinc-200"
           }`}
         >
-          {activeTab === "ocr" && (
-            <motion.div
-              layoutId="tab-pill"
-              className="absolute inset-0 rounded-xl frosted-glass bg-zinc-800/70 border-white/[0.16] shadow-sm z-[-1]"
-              transition={springTransition}
-            />
-          )}
           <ImageIcon className="w-4 h-4" />
-          <span>Screenshot OCR</span>
+          <span>Vision OCR Screenshot</span>
         </button>
       </div>
 
@@ -759,215 +768,158 @@ export default function DecodedApp() {
           {CONTEXT_OPTIONS.map((ctx) => {
             const isSelected = selectedContext === ctx;
             return (
-              <motion.button
+              <button
                 key={ctx}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
                 onClick={() => setSelectedContext(ctx)}
-                className={`w-full py-2.5 px-3 rounded-xl text-xs font-medium border text-center flex items-center justify-center transition-all ${
+                className={`w-full py-2.5 px-3 rounded-xl text-xs font-medium border text-center flex items-center justify-center transition-all active:scale-95 transform-gpu ${
                   isSelected
-                    ? "bg-blue-600/25 text-blue-200 border-blue-500/70 shadow-sm shadow-blue-500/20 font-semibold"
+                    ? "bg-blue-600/30 text-blue-200 border-blue-500/70 shadow-sm font-semibold"
                     : "frosted-glass-subtle text-zinc-400 border-white/[0.06] hover:border-white/[0.14] hover:text-zinc-200"
                 }`}
               >
                 <span>{ctx}</span>
-              </motion.button>
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* Tab 1: Raw Text Input with Spring Interactions */}
-      <AnimatePresence mode="wait">
-        {activeTab === "text" ? (
-          <motion.div
-            key="text-tab"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
-            className="flex flex-col gap-4 relative z-10"
-          >
-            {/* Equal-Height Quick Scenario Cards Grid */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between text-xs text-zinc-400">
-                <span className="font-medium">Quick Scenarios:</span>
-                <span className="text-[11px] text-zinc-500 font-mono">1-tap populate</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {SAMPLE_PRESETS.map((preset) => (
-                  <motion.button
-                    key={preset.id}
-                    whileHover={{ y: -2, scale: 1.01 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={springTransition}
-                    onClick={() => handlePresetSelect(preset)}
-                    className="min-h-[64px] p-3.5 rounded-xl text-left frosted-glass-subtle hover:bg-zinc-800/60 text-zinc-300 border-white/[0.06] hover:border-white/[0.16] transition-all flex flex-col justify-between shadow-sm"
-                  >
-                    <span className="font-medium text-xs text-zinc-200 truncate">{preset.title}</span>
-                    <span className="text-[10px] text-zinc-500 font-mono">{preset.context}</span>
-                  </motion.button>
-                ))}
-              </div>
+      {/* Tab 1: Raw Text Input */}
+      {activeTab === "text" ? (
+        <div className="flex flex-col gap-4 relative z-10">
+          {/* Quick Scenario Cards Grid */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between text-xs text-zinc-400">
+              <span className="font-medium">Quick Scenarios:</span>
+              <span className="text-[11px] text-zinc-500 font-mono">1-tap populate</span>
             </div>
-
-            {/* Textarea Input Card */}
-            <div className="relative flex flex-col rounded-2xl frosted-glass focus-within:border-blue-500/60 focus-within:ring-1 focus-within:ring-blue-500/30 transition-all overflow-hidden shadow-lg">
-              <textarea
-                ref={textareaRef}
-                value={messages}
-                onChange={(e) => {
-                  setMessages(e.target.value);
-                  if (error) setError(null);
-                }}
-                placeholder="Paste their text, timestamps, or full conversation snippet here... (e.g. 'Them [10:30 PM]: haha maybe next week!')"
-                rows={4}
-                className="w-full bg-transparent px-4.5 pt-4 pb-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none resize-none min-h-[120px] leading-relaxed"
-              />
-
-              <div className="flex items-center justify-between px-4.5 py-3 bg-black/40 border-t border-white/[0.06] text-xs text-zinc-500 font-mono">
-                <span className="flex items-center gap-2">
-                  <span>{messages.length} characters</span>
-                  {imageFileName && (
-                    <span className="text-blue-400 flex items-center gap-1">
-                      <FileImage className="w-3 h-3" />
-                      {imageFileName}
-                    </span>
-                  )}
-                </span>
-                {messages.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setMessages("");
-                      setUploadedImage(null);
-                      setImageFileName(null);
-                    }}
-                    className="text-zinc-400 hover:text-zinc-200 transition-colors"
-                  >
-                    Clear text
-                  </button>
-                )}
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {SAMPLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => handlePresetSelect(preset)}
+                  className="min-h-[64px] p-3.5 rounded-xl text-left frosted-glass-subtle hover:bg-zinc-800/70 text-zinc-300 border-white/[0.06] hover:border-white/[0.16] transition-all flex flex-col justify-between shadow-sm active:scale-98 transform-gpu"
+                >
+                  <span className="font-medium text-xs text-zinc-200 truncate">{preset.title}</span>
+                  <span className="text-[10px] text-zinc-500 font-mono">{preset.context}</span>
+                </button>
+              ))}
             </div>
-          </motion.div>
-        ) : (
-          /* Tab 2: Interactive Screenshot OCR Drag & Drop + Simulation */
-          <motion.div
-            key="ocr-tab"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`flex flex-col gap-4 p-6 sm:p-8 rounded-2xl frosted-glass border-2 border-dashed transition-all text-center items-center justify-center min-h-[220px] relative z-10 ${
-              isDragging
-                ? "border-blue-500 bg-blue-500/10 scale-[1.01]"
-                : "border-white/[0.14] hover:border-white/[0.22]"
-            }`}
-          >
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              className="hidden"
+          </div>
+
+          {/* Textarea Input Card */}
+          <div className="relative flex flex-col rounded-2xl frosted-glass focus-within:border-blue-500/60 transition-all overflow-hidden shadow-lg">
+            <textarea
+              ref={textareaRef}
+              value={messages}
               onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  processImageFile(e.target.files[0]);
-                }
+                setMessages(e.target.value);
+                if (error) setError(null);
               }}
+              placeholder="Paste their text, timestamps, or full conversation snippet here... (e.g. 'Them [10:30 PM]: haha maybe next week!')"
+              rows={4}
+              className="w-full bg-transparent px-4.5 pt-4 pb-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none resize-none min-h-[120px] leading-relaxed"
             />
 
-            {uploadedImage ? (
-              <div className="flex flex-col items-center gap-3 w-full max-w-sm">
-                <div className="relative rounded-xl overflow-hidden border border-white/[0.16] shadow-xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={uploadedImage}
-                    alt="Uploaded screenshot"
-                    className="max-h-48 w-auto object-contain rounded-lg"
-                  />
-                  <button
-                    onClick={() => {
-                      setUploadedImage(null);
-                      setImageFileName(null);
-                    }}
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-black/70 hover:bg-black text-zinc-300 hover:text-white transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                {isExtractingOcr ? (
-                  <div className="flex items-center gap-2 text-xs text-blue-400 font-mono">
-                    <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Extracting text timestamps & cadence...</span>
-                  </div>
-                ) : (
-                  <p className="text-xs text-zinc-400">
-                    Screenshot loaded: <span className="text-zinc-200 font-mono">{imageFileName}</span>
-                  </p>
+            <div className="flex items-center justify-between px-4.5 py-3 bg-black/40 border-t border-white/[0.06] text-xs text-zinc-500 font-mono">
+              <span className="flex items-center gap-2">
+                <span>{messages.length} characters</span>
+                {imageFileName && (
+                  <span className="text-blue-400 flex items-center gap-1">
+                    <FileImage className="w-3 h-3" />
+                    {imageFileName}
+                  </span>
                 )}
-              </div>
-            ) : (
-              <>
-                <div className="w-14 h-14 rounded-2xl frosted-glass-subtle flex items-center justify-center text-blue-400 mb-1 shadow-md">
-                  <UploadCloud className="w-7 h-7" />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-semibold text-zinc-200 tracking-tight">
-                    Drag & Drop or Paste Screenshot
-                  </h3>
-                  <p className="text-xs text-zinc-400 max-w-md leading-relaxed">
-                    Drop your iMessage, WhatsApp, or Hinge screenshot here or press <span className="font-mono text-zinc-300">Ctrl+V / Cmd+V</span>.
-                  </p>
-                </div>
-
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 touch-target flex items-center gap-2 mt-1"
+              </span>
+              {messages.length > 0 && (
+                <button
+                  onClick={() => {
+                    setMessages("");
+                    setUploadedImage(null);
+                    setUploadedBase64(null);
+                    setImageFileName(null);
+                  }}
+                  className="text-zinc-400 hover:text-zinc-200 transition-colors"
                 >
-                  <FileImage className="w-3.5 h-3.5" />
-                  <span>Choose Image File</span>
-                </motion.button>
+                  Clear text
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Tab 2: Multimodal Real Vision OCR Upload */
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`flex flex-col gap-4 p-6 sm:p-8 rounded-2xl frosted-glass border-2 border-dashed transition-all text-center items-center justify-center min-h-[220px] relative z-10 ${
+            isDragging
+              ? "border-blue-500 bg-blue-500/10 scale-[1.01]"
+              : "border-white/[0.14] hover:border-white/[0.22]"
+          }`}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                processImageFile(e.target.files[0]);
+              }
+            }}
+          />
 
-                <div className="flex items-center gap-2 my-1">
-                  <div className="h-[1px] w-12 bg-white/[0.08]" />
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono tracking-wider">or test presets</span>
-                  <div className="h-[1px] w-12 bg-white/[0.08]" />
-                </div>
+          {uploadedImage ? (
+            <div className="flex flex-col items-center gap-3 w-full max-w-sm">
+              <div className="relative rounded-xl overflow-hidden border border-white/[0.16] shadow-xl max-h-52">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={uploadedImage}
+                  alt="Uploaded screenshot"
+                  className="max-h-52 w-auto object-contain rounded-lg"
+                />
+                <button
+                  onClick={() => {
+                    setUploadedImage(null);
+                    setUploadedBase64(null);
+                    setImageFileName(null);
+                  }}
+                  className="absolute top-2 right-2 p-1.5 rounded-full bg-black/80 text-zinc-300 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-zinc-400 font-mono">
+                Screenshot ready for Vision OCR: <span className="text-zinc-200">{imageFileName}</span>
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="w-14 h-14 rounded-2xl frosted-glass-subtle flex items-center justify-center text-blue-400 mb-1 shadow-md">
+                <UploadCloud className="w-7 h-7" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <h3 className="text-sm font-semibold text-zinc-200 tracking-tight">
+                  Real Multimodal Vision OCR
+                </h3>
+                <p className="text-xs text-zinc-400 max-w-md leading-relaxed">
+                  Drop screenshot or paste with <span className="font-mono text-zinc-300">Ctrl+V / Cmd+V</span>. Parses German, English, and multilingual chats.
+                </p>
+              </div>
 
-                <div className="flex flex-wrap gap-2.5 justify-center">
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() => {
-                      handlePresetSelect(SAMPLE_PRESETS[0]);
-                      setActiveTab("text");
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-zinc-900/90 text-zinc-300 border border-white/[0.08] hover:border-white/[0.18] touch-target flex items-center"
-                  >
-                    Simulate &ldquo;Cold 12h Delay&rdquo;
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() => {
-                      handlePresetSelect(SAMPLE_PRESETS[1]);
-                      setActiveTab("text");
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-zinc-900/90 text-zinc-300 border border-white/[0.08] hover:border-white/[0.18] touch-target flex items-center"
-                  >
-                    Simulate &ldquo;Late Night Wyd&rdquo;
-                  </motion.button>
-                </div>
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 touch-target flex items-center gap-2 mt-1 active:scale-95 transform-gpu"
+              >
+                <FileImage className="w-3.5 h-3.5" />
+                <span>Select Screenshot</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Error Banner */}
       <AnimatePresence>
@@ -985,13 +937,11 @@ export default function DecodedApp() {
       </AnimatePresence>
 
       {/* Shimmer Primary Action Button */}
-      <motion.button
-        whileHover={!loading && messages.trim() ? { scale: 1.01 } : {}}
-        whileTap={!loading && messages.trim() ? { scale: 0.97 } : {}}
-        disabled={loading || !messages.trim()}
+      <button
+        disabled={loading || !canAnalyze}
         onClick={handleAnalyze}
-        className={`w-full relative overflow-hidden py-4 px-6 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all touch-target z-10 ${
-          loading || !messages.trim()
+        className={`w-full relative overflow-hidden py-4 px-6 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all touch-target z-10 active:scale-[0.98] transform-gpu ${
+          loading || !canAnalyze
             ? "bg-zinc-900/80 text-zinc-500 border border-white/[0.04] cursor-not-allowed"
             : "shimmer-glow text-white shadow-xl shadow-blue-600/25 border border-blue-400/40 cursor-pointer"
         }`}
@@ -1010,19 +960,18 @@ export default function DecodedApp() {
             <ArrowRight className="w-4 h-4 text-blue-100 ml-1" />
           </>
         )}
-      </motion.button>
+      </button>
 
       {/* Tactical Pulse Scanner during Loading */}
       <AnimatePresence>
         {loading && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.97 }}
+            initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.97 }}
-            className="p-6 sm:p-8 rounded-2xl frosted-glass border-blue-500/40 flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden shadow-2xl z-10"
+            exit={{ opacity: 0, scale: 0.98 }}
+            className="p-6 sm:p-8 rounded-2xl frosted-glass border-blue-500/40 flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden shadow-xl z-10 transform-gpu"
           >
-            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-scan-beam" />
-            <div className="w-12 h-12 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center animate-pulse-subtle">
+            <div className="w-12 h-12 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center">
               <Eye className="w-6 h-6 text-blue-400" />
             </div>
             <div className="flex flex-col gap-1">
@@ -1037,7 +986,7 @@ export default function DecodedApp() {
         )}
       </AnimatePresence>
 
-      {/* Staggered Dynamic Reveal for Analysis Results */}
+      {/* Dynamic Reveal for Analysis Results */}
       <AnimatePresence>
         {analysis && !loading && (
           <motion.div
@@ -1050,7 +999,7 @@ export default function DecodedApp() {
             {/* Dynamic Status & Energy Bar */}
             <motion.div
               variants={resultItemVariants}
-              className="p-4 rounded-2xl frosted-glass flex flex-wrap items-center justify-between gap-3 shadow-md"
+              className="p-4 rounded-2xl frosted-glass flex flex-wrap items-center justify-between gap-3 shadow-md transform-gpu"
             >
               <div className="flex items-center gap-2">
                 {(() => {
@@ -1084,7 +1033,7 @@ export default function DecodedApp() {
             {/* Blunt Psychological Subtext Banner */}
             <motion.div
               variants={resultItemVariants}
-              className="p-5 sm:p-6 rounded-2xl frosted-glass flex flex-col gap-2.5 shadow-md border-blue-500/20"
+              className="p-5 sm:p-6 rounded-2xl frosted-glass flex flex-col gap-2.5 shadow-md border-blue-500/20 transform-gpu"
             >
               <div className="flex items-center gap-2 text-xs font-bold tracking-wider font-mono text-blue-400 uppercase">
                 <Sparkles className="w-4 h-4" />
@@ -1098,7 +1047,7 @@ export default function DecodedApp() {
             {/* Internal Monologue Thought Bubble */}
             <motion.div
               variants={resultItemVariants}
-              className="p-5 sm:p-6 rounded-2xl frosted-glass border-purple-900/40 relative overflow-hidden shadow-md"
+              className="p-5 sm:p-6 rounded-2xl frosted-glass border-purple-900/40 relative overflow-hidden shadow-md transform-gpu"
             >
               <div className="flex items-center gap-2 text-xs font-bold tracking-wider font-mono text-purple-400 uppercase mb-2">
                 <Eye className="w-4 h-4" />
@@ -1112,7 +1061,7 @@ export default function DecodedApp() {
             {/* Fatal Communication Trap Alert */}
             <motion.div
               variants={resultItemVariants}
-              className="p-5 sm:p-6 rounded-2xl bg-rose-950/25 border border-rose-900/50 flex flex-col gap-2 shadow-md"
+              className="p-5 sm:p-6 rounded-2xl bg-rose-950/25 border border-rose-900/50 flex flex-col gap-2 shadow-md transform-gpu"
             >
               <div className="flex items-center gap-2 text-xs font-bold tracking-wider font-mono text-rose-400 uppercase">
                 <ShieldAlert className="w-4 h-4 text-rose-400" />
@@ -1128,11 +1077,9 @@ export default function DecodedApp() {
               {/* Play 1: Safe Play */}
               <motion.div
                 variants={resultItemVariants}
-                layout
-                className="p-5 sm:p-6 rounded-2xl frosted-glass border-emerald-900/50 flex flex-col justify-between gap-5 relative shadow-lg h-full"
+                className="p-5 sm:p-6 rounded-2xl frosted-glass border-emerald-900/50 flex flex-col justify-between gap-5 relative shadow-lg h-full transform-gpu"
               >
                 <div className="flex flex-col gap-3.5 flex-1">
-                  {/* Card Header */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                       <span>PLAY 1: SAFE PLAY</span>
@@ -1143,18 +1090,15 @@ export default function DecodedApp() {
                     </div>
                   </div>
 
-                  {/* Dedicated Timing Pill */}
                   <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-950/25 border border-emerald-800/25 text-emerald-300 text-xs font-mono leading-relaxed">
                     <Clock className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
                     <span>Timing: {analysis.safePlay.timing}</span>
                   </div>
 
-                  {/* Suggested Reply Box */}
                   <div className="p-4 rounded-xl bg-emerald-950/25 border border-emerald-800/35 text-emerald-100 text-sm font-medium leading-relaxed select-all">
                     {analysis.safePlay.reply}
                   </div>
 
-                  {/* Expandable Reasoning Accordion */}
                   <div className="border-t border-white/[0.06] pt-2.5">
                     <button
                       onClick={() => setSafeExpanded(!safeExpanded)}
@@ -1168,64 +1112,38 @@ export default function DecodedApp() {
                       )}
                     </button>
 
-                    <AnimatePresence>
-                      {safeExpanded && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="text-xs text-zinc-400 leading-relaxed mt-1.5 overflow-hidden"
-                        >
-                          {analysis.safePlay.reasoning}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {safeExpanded && (
+                      <p className="text-xs text-zinc-400 leading-relaxed mt-1.5">
+                        {analysis.safePlay.reasoning}
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {/* Tactile Morph Copy Button */}
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.96 }}
+                <button
                   onClick={() => handleCopy(analysis.safePlay.reply, "safe")}
-                  className="w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 touch-target transition-all mt-auto"
+                  className="w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 touch-target transition-all mt-auto active:scale-95 transform-gpu"
                 >
-                  <AnimatePresence mode="wait">
-                    {copiedKey === "safe" ? (
-                      <motion.div
-                        key="copied"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5"
-                      >
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>COPIED TO CLIPBOARD</span>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="copy"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>COPY SAFE PLAY</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
+                  {copiedKey === "safe" ? (
+                    <div className="flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>COPIED TO CLIPBOARD</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>COPY SAFE PLAY</span>
+                    </div>
+                  )}
+                </button>
               </motion.div>
 
               {/* Play 2: Bold Play */}
               <motion.div
                 variants={resultItemVariants}
-                layout
-                className="p-5 sm:p-6 rounded-2xl frosted-glass border-amber-900/50 flex flex-col justify-between gap-5 relative shadow-lg h-full"
+                className="p-5 sm:p-6 rounded-2xl frosted-glass border-amber-900/50 flex flex-col justify-between gap-5 relative shadow-lg h-full transform-gpu"
               >
                 <div className="flex flex-col gap-3.5 flex-1">
-                  {/* Card Header */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30">
                       <span>PLAY 2: BOLD PLAY</span>
@@ -1236,18 +1154,15 @@ export default function DecodedApp() {
                     </div>
                   </div>
 
-                  {/* Dedicated Focus Pill */}
                   <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-950/25 border border-amber-800/25 text-amber-300 text-xs font-mono leading-relaxed">
                     <Zap className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
                     <span>Focus: Polarizing Frame Shift</span>
                   </div>
 
-                  {/* Suggested Reply Box */}
                   <div className="p-4 rounded-xl bg-amber-950/25 border border-amber-800/35 text-amber-100 text-sm font-medium leading-relaxed select-all">
                     {analysis.boldPlay.reply}
                   </div>
 
-                  {/* Expandable Reasoning Accordion */}
                   <div className="border-t border-white/[0.06] pt-2.5">
                     <button
                       onClick={() => setBoldExpanded(!boldExpanded)}
@@ -1261,60 +1176,36 @@ export default function DecodedApp() {
                       )}
                     </button>
 
-                    <AnimatePresence>
-                      {boldExpanded && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="flex flex-col gap-2 mt-1.5 overflow-hidden"
-                        >
-                          <p className="text-xs text-zinc-400 leading-relaxed">
-                            {analysis.boldPlay.reasoning}
-                          </p>
-                          <div className="text-xs text-amber-300/85 leading-relaxed bg-amber-950/30 p-2.5 rounded-lg border border-amber-900/40">
-                            <span className="font-semibold text-amber-200">Risk factor: </span>
-                            {analysis.boldPlay.risk}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {boldExpanded && (
+                      <div className="flex flex-col gap-2 mt-1.5">
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                          {analysis.boldPlay.reasoning}
+                        </p>
+                        <div className="text-xs text-amber-300/85 leading-relaxed bg-amber-950/30 p-2.5 rounded-lg border border-amber-900/40">
+                          <span className="font-semibold text-amber-200">Risk factor: </span>
+                          {analysis.boldPlay.risk}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Tactile Morph Copy Button */}
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.96 }}
+                <button
                   onClick={() => handleCopy(analysis.boldPlay.reply, "bold")}
-                  className="w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 touch-target transition-all mt-auto"
+                  className="w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 touch-target transition-all mt-auto active:scale-95 transform-gpu"
                 >
-                  <AnimatePresence mode="wait">
-                    {copiedKey === "bold" ? (
-                      <motion.div
-                        key="copied"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5"
-                      >
-                        <Check className="w-3.5 h-3.5 text-amber-400" />
-                        <span>COPIED TO CLIPBOARD</span>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="copy"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>COPY BOLD PLAY</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
+                  {copiedKey === "bold" ? (
+                    <div className="flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-amber-400" />
+                      <span>COPIED TO CLIPBOARD</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>COPY BOLD PLAY</span>
+                    </div>
+                  )}
+                </button>
               </motion.div>
             </div>
 
@@ -1322,15 +1213,13 @@ export default function DecodedApp() {
             {analysis.walkAwayOption && (
               <motion.div
                 variants={resultItemVariants}
-                className="p-5 sm:p-6 rounded-2xl bg-rose-950/30 border border-rose-900/60 flex flex-col gap-4 relative shadow-xl overflow-hidden mt-2"
+                className="p-5 sm:p-6 rounded-2xl bg-rose-950/30 border border-rose-900/60 flex flex-col gap-4 relative shadow-xl overflow-hidden mt-2 transform-gpu"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-full text-xs font-bold font-mono bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1.5">
-                      <Ban className="w-3.5 h-3.5 text-rose-400" />
-                      <span>THE WALK-AWAY PLAY (MAX DIGNITY)</span>
-                    </span>
-                  </div>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold font-mono bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1.5">
+                    <Ban className="w-3.5 h-3.5 text-rose-400" />
+                    <span>THE WALK-AWAY PLAY (MAX DIGNITY)</span>
+                  </span>
                   <span className="text-[11px] font-mono text-rose-400/90 font-semibold uppercase tracking-wider">
                     RECOMMENDED MOVE
                   </span>
@@ -1346,7 +1235,6 @@ export default function DecodedApp() {
                   </p>
                 </div>
 
-                {/* Re-engagement condition box */}
                 <div className="border-t border-rose-900/40 pt-3">
                   <button
                     onClick={() => setWalkAwayExpanded(!walkAwayExpanded)}
@@ -1360,54 +1248,30 @@ export default function DecodedApp() {
                     )}
                   </button>
 
-                  <AnimatePresence>
-                    {walkAwayExpanded && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="text-xs text-rose-200/80 leading-relaxed mt-2 bg-rose-950/40 p-3 rounded-lg border border-rose-900/40"
-                      >
-                        <span className="font-semibold text-rose-300 font-mono uppercase text-[10px]">Rule: </span>
-                        {analysis.walkAwayOption.reEngagementCondition}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  {walkAwayExpanded && (
+                    <div className="text-xs text-rose-200/80 leading-relaxed mt-2 bg-rose-950/40 p-3 rounded-lg border border-rose-900/40">
+                      <span className="font-semibold text-rose-300 font-mono uppercase text-[10px]">Rule: </span>
+                      {analysis.walkAwayOption.reEngagementCondition}
+                    </div>
+                  )}
                 </div>
 
-                {/* Action button */}
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.96 }}
+                <button
                   onClick={() => handleCopy("LEAVE ON READ", "walkaway")}
-                  className="w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-200 border border-rose-500/40 touch-target transition-all"
+                  className="w-full py-3 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-200 border border-rose-500/40 touch-target transition-all active:scale-95 transform-gpu"
                 >
-                  <AnimatePresence mode="wait">
-                    {copiedKey === "walkaway" ? (
-                      <motion.div
-                        key="copied"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5"
-                      >
-                        <Check className="w-3.5 h-3.5 text-rose-400" />
-                        <span>FRAME LOCKED: LEFT ON READ</span>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="copy"
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        className="flex items-center gap-1.5"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>EXECUTE WALK-AWAY (LEAVE ON READ)</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
+                  {copiedKey === "walkaway" ? (
+                    <div className="flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-rose-400" />
+                      <span>FRAME LOCKED: LEFT ON READ</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>EXECUTE WALK-AWAY (LEAVE ON READ)</span>
+                    </div>
+                  )}
+                </button>
               </motion.div>
             )}
           </motion.div>
@@ -1417,13 +1281,13 @@ export default function DecodedApp() {
       {/* 🎙️ 1. VOICE CALIBRATION MODAL */}
       <AnimatePresence>
         {isVoiceModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/80 backdrop-blur-sm transform-gpu">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
               transition={springTransition}
-              className="w-full max-w-lg p-6 sm:p-7 rounded-3xl frosted-glass border-white/[0.16] shadow-2xl flex flex-col gap-5 relative max-h-[90vh] overflow-y-auto no-scrollbar"
+              className="w-full max-w-lg p-6 sm:p-7 rounded-3xl frosted-glass border-white/[0.16] shadow-2xl flex flex-col gap-5 relative max-h-[90vh] overflow-y-auto no-scrollbar touch-scroll transform-gpu"
             >
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3.5">
                 <div className="flex items-center gap-2.5">
@@ -1459,7 +1323,7 @@ export default function DecodedApp() {
                         },
                       }))
                     }
-                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between active:scale-98 transform-gpu ${
                       voiceProfile.styleToggles.allLowercase
                         ? "bg-blue-600/20 text-blue-300 border-blue-500/60 font-semibold"
                         : "frosted-glass-subtle text-zinc-400 border-white/[0.06] hover:border-white/[0.12]"
@@ -1479,7 +1343,7 @@ export default function DecodedApp() {
                         },
                       }))
                     }
-                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between active:scale-98 transform-gpu ${
                       voiceProfile.styleToggles.dryHumor
                         ? "bg-blue-600/20 text-blue-300 border-blue-500/60 font-semibold"
                         : "frosted-glass-subtle text-zinc-400 border-white/[0.06] hover:border-white/[0.12]"
@@ -1499,7 +1363,7 @@ export default function DecodedApp() {
                         },
                       }))
                     }
-                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between active:scale-98 transform-gpu ${
                       voiceProfile.styleToggles.fastAndPunchy
                         ? "bg-blue-600/20 text-blue-300 border-blue-500/60 font-semibold"
                         : "frosted-glass-subtle text-zinc-400 border-white/[0.06] hover:border-white/[0.12]"
@@ -1519,7 +1383,7 @@ export default function DecodedApp() {
                         },
                       }))
                     }
-                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-xl text-left border text-xs transition-all flex flex-col justify-between active:scale-98 transform-gpu ${
                       voiceProfile.styleToggles.zeroEmoji
                         ? "bg-blue-600/20 text-blue-300 border-blue-500/60 font-semibold"
                         : "frosted-glass-subtle text-zinc-400 border-white/[0.06] hover:border-white/[0.12]"
@@ -1550,14 +1414,12 @@ export default function DecodedApp() {
                 />
               </div>
 
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.97 }}
+              <button
                 onClick={() => setIsVoiceModalOpen(false)}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-lg shadow-blue-600/20"
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-lg active:scale-98 transform-gpu"
               >
                 SAVE VOICEPRINT & CONSTRAIN LLM
-              </motion.button>
+              </button>
             </motion.div>
           </div>
         )}
@@ -1566,13 +1428,13 @@ export default function DecodedApp() {
       {/* 👥 2. NEW CONTACT CREATION MODAL */}
       <AnimatePresence>
         {isNewContactModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/80 backdrop-blur-sm transform-gpu">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
               transition={springTransition}
-              className="w-full max-w-md p-6 rounded-3xl frosted-glass border-white/[0.16] shadow-2xl flex flex-col gap-4 relative"
+              className="w-full max-w-md p-6 rounded-3xl frosted-glass border-white/[0.16] shadow-2xl flex flex-col gap-4 relative transform-gpu"
             >
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <h2 className="text-sm font-bold text-zinc-100 uppercase font-mono">
@@ -1610,14 +1472,12 @@ export default function DecodedApp() {
                   />
                 </div>
 
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.97 }}
+                <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-lg mt-2"
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-lg mt-2 active:scale-98 transform-gpu"
                 >
                   CREATE DOSSIER
-                </motion.button>
+                </button>
               </form>
             </motion.div>
           </div>
@@ -1627,13 +1487,13 @@ export default function DecodedApp() {
       {/* 📜 3. CONTACT HISTORY REPLAY DRAWER */}
       <AnimatePresence>
         {isHistoryDrawerOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/80 backdrop-blur-sm transform-gpu">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
               transition={springTransition}
-              className="w-full max-w-lg p-6 rounded-3xl frosted-glass border-white/[0.16] shadow-2xl flex flex-col gap-4 relative max-h-[85vh] overflow-y-auto no-scrollbar"
+              className="w-full max-w-lg p-6 rounded-3xl frosted-glass border-white/[0.16] shadow-2xl flex flex-col gap-4 relative max-h-[85vh] overflow-y-auto no-scrollbar touch-scroll transform-gpu"
             >
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <div>
