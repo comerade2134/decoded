@@ -24,6 +24,56 @@ const VALID_ENERGY_LEVELS: EnergyLevel[] = [
   "Fading",
 ];
 
+function extractCleanTranscription(rawText: string): string {
+  if (!rawText) return "";
+
+  // 1. If closed think tag exists and has text after it
+  if (rawText.includes("</think>")) {
+    const after = rawText.split("</think>")[1].trim();
+    if (after.length > 20) return after;
+  }
+
+  // 2. If it's inside think block, extract quotes or list items from think block
+  const lines = rawText.split("\n");
+  const extractedLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (
+      trimmed.startsWith('- "') ||
+      trimmed.startsWith('* "') ||
+      trimmed.includes("Bubble:") ||
+      trimmed.includes("Text:") ||
+      trimmed.includes("Content:") ||
+      trimmed.includes("Header:")
+    ) {
+      const cleaned = trimmed
+        .replace(/^[-*•]\s*/, "")
+        .replace(/^(Bubble|Text|Content|Header|Chat Bubble|Sender\/Label|Label|Sender):\s*/i, "")
+        .replace(/^"|"$/g, "")
+        .trim();
+      if (
+        cleaned.length > 0 &&
+        !cleaned.toLowerCase().includes("analyze the image") &&
+        !cleaned.toLowerCase().includes("transcription strategy") &&
+        !cleaned.toLowerCase().includes("identify the text")
+      ) {
+        extractedLines.push(cleaned);
+      }
+    }
+  }
+
+  if (extractedLines.length > 0) {
+    return extractedLines.join("\n");
+  }
+
+  // Fallback: strip think tags if any, or return raw
+  return (
+    rawText.replace(/<think>[\s\S]*?<\/think>/gi, "").trim() ||
+    rawText.replace(/<\/?think>/gi, "").trim()
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as AnalysisRequest;
@@ -40,77 +90,93 @@ export async function POST(req: NextRequest) {
     const textModel =
       process.env.LLM_MODEL ||
       (baseUrl.includes("groq.com") ? "openai/gpt-oss-120b" : "gpt-4o-mini");
-    const primaryVisionModel = process.env.VISION_MODEL || "llama-3.2-11b-vision-preview";
-    const fallbackVisionModel = "qwen/qwen3.6-27b";
+
+    const visionModels = [
+      process.env.VISION_MODEL || "llama-3.2-11b-vision-preview",
+      "llama-3.2-90b-vision-preview",
+      "qwen/qwen3.6-27b",
+    ];
 
     let conversationText = (messages || "").trim();
 
-    // 1. REAL VISION OCR PIPELINE
+    // 1. REAL VISION OCR PIPELINE (Groq Multimodal Vision)
     if (imageBase64 && imageBase64.startsWith("data:image/")) {
-      if (apiKey) {
-        try {
-          const visionPrompt = [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "You are an expert OCR transcription engine. Accurately transcribe all visible chat messages, senders, and timestamps from this chat screenshot regardless of language (including German, English, Spanish, Arabic, slang, abbreviations, and emojis). Return ONLY the transcribed dialogue, without commentary.",
-                },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: imageBase64,
-                  },
-                },
-              ],
-            },
-          ];
+      console.log("Vision OCR payload length:", imageBase64.length);
 
-          let visionResponse = await fetch(`${baseUrl}/chat/completions`, {
+      if (!apiKey) {
+        return NextResponse.json(
+          { error: "LLM_API_KEY is not configured on the server to run Vision OCR." },
+          { status: 500 }
+        );
+      }
+
+      let visionSuccess = false;
+      let lastVisionError = "";
+
+      for (const vModel of visionModels) {
+        try {
+          console.log(`Attempting Vision OCR with model: ${vModel}`);
+          const visionResponse = await fetch(`${baseUrl}/chat/completions`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${apiKey}`,
             },
             body: JSON.stringify({
-              model: primaryVisionModel,
-              messages: visionPrompt,
+              model: vModel,
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: "Transcribe all chat bubbles, sender names, and timestamps from this image word-for-word in their original language (German, English, Spanish, Arabic, etc.). Return ONLY the transcribed text dialogue without markdown commentary.",
+                    },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: imageBase64,
+                      },
+                    },
+                  ],
+                },
+              ],
               temperature: 0.1,
-              max_tokens: 800,
+              max_tokens: 1500,
             }),
           });
 
-          // Fallback to active vision model if primary model was decommissioned
-          if (!visionResponse.ok) {
-            visionResponse = await fetch(`${baseUrl}/chat/completions`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify({
-                model: fallbackVisionModel,
-                messages: visionPrompt,
-                temperature: 0.1,
-                max_tokens: 800,
-              }),
-            });
-          }
+          const visionJson = await visionResponse.json();
+          console.log(`Groq Vision Response (${vModel}):`, JSON.stringify(visionJson).slice(0, 300));
 
-          if (visionResponse.ok) {
-            const visionData = await visionResponse.json();
-            const rawTranscribed = visionData.choices?.[0]?.message?.content || "";
-            const cleanedTranscribed = rawTranscribed
-              .replace(/<think>[\s\S]*?<\/think>/gi, "")
-              .trim();
-            if (cleanedTranscribed.length > 0) {
-              conversationText = cleanedTranscribed;
+          if (visionResponse.ok && visionJson.choices?.[0]?.message?.content) {
+            const rawContent = visionJson.choices[0].message.content;
+            const cleaned = extractCleanTranscription(rawContent);
+            if (cleaned && cleaned.trim().length > 0) {
+              conversationText = cleaned.trim();
+              visionSuccess = true;
+              console.log("Vision OCR successfully transcribed:", conversationText.slice(0, 150));
+              break;
             }
+          } else {
+            lastVisionError = visionJson.error?.message || `HTTP ${visionResponse.status}`;
           }
-        } catch (visionErr) {
-          console.error("Vision OCR Error:", visionErr);
+        } catch (vErr: any) {
+          console.error(`Vision model ${vModel} error:`, vErr);
+          lastVisionError = vErr.message;
         }
+      }
+
+      if (!visionSuccess || !conversationText) {
+        // DO NOT silently return mock fallback for image uploads!
+        return NextResponse.json(
+          {
+            error: `Vision OCR failed to parse the screenshot: ${
+              lastVisionError || "No readable text detected in image"
+            }. Please ensure the image is clear or paste the text snippet directly.`,
+          },
+          { status: 400 }
+        );
       }
     }
 
@@ -121,21 +187,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // If no API key is provided, use built-in psychological heuristics engine
-    if (!apiKey) {
-      const mockResult = generateIntelligentFallback(conversationText, relationshipContext, userVoiceProfile);
-      mockResult.transcribedText = conversationText;
-      return NextResponse.json(mockResult, { status: 200 });
-    }
-
     // Format Voice Calibration constraints
     let voiceConstraintPrompt = "";
     if (userVoiceProfile) {
       const { styleToggles, customSampleTexts } = userVoiceProfile;
       voiceConstraintPrompt = `
-### 🗣️ USER VOICEPRINT CONSTRAINTS (MANDATORY):
+### 🗣️ USER VOICEPRINT CONSTRAINTS:
 You MUST calibrate the phrasing of "safePlay.reply" and "boldPlay.reply" to match the user's authentic voice:
-- All-Lowercase Mode: ${styleToggles.allLowercase ? "TRUE — The reply MUST be 100% all lowercase (e.g. 'sounds good, talk later'). No capitalized letters." : "False"}
+- All-Lowercase: ${styleToggles.allLowercase ? "TRUE — The reply MUST be 100% all lowercase (e.g. 'sounds good, talk later' or 'alles gut, melde mich später')." : "False"}
 - Dry Humor: ${styleToggles.dryHumor ? "TRUE — Use understated deadpan, subtle irony, and zero eager fluff." : "Standard"}
 - Fast & Punchy: ${styleToggles.fastAndPunchy ? "TRUE — Limit replies strictly to 3 to 7 words max." : "Concise (5-12 words)"}
 - Zero Emoji: ${styleToggles.zeroEmoji ? "TRUE — Absolutely 0 emojis." : "Zero emojis"}
@@ -151,29 +210,33 @@ ${
 ### 👑 CORE BEHAVIORAL PRINCIPLES:
 1. NON-NEEDINESS & OUTCOME INDEPENDENCE:
    - Neediness is when someone cares more about what the other person thinks than what they think of themselves.
-   - If the other person is giving lukewarm energy, breadcrumbing, or playing passive games, call it out plainly. Never advise dancing for someone's validation or scrambling to prove worth.
-   - A high-value response is never eager, defensive, or apologetic. It represents pure comfort with whatever outcome happens.
+   - If the other person is pleading, begging, love bombing, breadcrumbing, or testing boundaries, call it out with sharp psychological clarity.
+   - HIGH EMOTIONAL SITUATIONS (begging, pleading, breakups, panic, emotional intensity) MUST BE DETECTED ACCURATELY. Do NOT mistake emotional pleading or relationship crisis for casual/dry texting!
+   - A high-value response is never eager, defensive, or overwhelmed. It represents calm, grounded self-respect and emotional sovereignty.
 
-2. POLARIZING CLARITY ("FUCK YES OR NO"):
-   - Rejection is vastly better than lingering ambiguity. The goal of texting is never endless back-and-forth chat; it is filtering for mutual, enthusiastic interest and moving to real-life connection.
-   - "subtext": 1-2 blunt, perceptive sentences cutting straight through their text. Are they breadcrumbing? Validating ego? Testing boundaries? Being polite? Give the unvarnished truth.
-   - "trapToAvoid": The exact needy trap the user is prone to falling into right now (over-explaining, double-texting, seeking reassurance, reacting defensively to low effort).
-   - "internalMonologue": An unfiltered, first-person thought bubble exposing what they are privately feeling or testing.
+2. 🌍 LANGUAGE MATCHING (CRITICAL MANDATE):
+   - Inspect the language of the conversation snippet (German, English, Spanish, French, Arabic, etc.).
+   - The subtext analysis, internal monologue, and traps can be in English (for clear psychological insights), BUT:
+   - The suggested texting plays ("safePlay.reply" and "boldPlay.reply") MUST BE WRITTEN IN THE EXACT SAME LANGUAGE AS THE CONVERSATION!
+   - Examples:
+     * If the chat is in German (e.g. "Bitte gib mir noch eine Chance... Ich vermisse dich"):
+       -> Safe Play reply MUST BE GERMAN (e.g. "hey, danke dir. lass uns die tage mal in ruhe telefonieren", "verstehe dich. lass uns das persönlich besprechen")
+       -> Bold Play reply MUST BE GERMAN (e.g. "lass uns das persönlich klären wenn du zeit hast", "ich schätze deine worte, aber wir brauchen beide erstmal abstand")
+     * If the chat is in English:
+       -> Safe Play reply and Bold Play reply MUST BE ENGLISH.
 
 3. "WALK AWAY" DIGNITY DIAGNOSTIC:
-   - If the dynamic is "Fading", if the other person sent dry replies (< 4 words) after long delays, or if the conversation is a one-sided interview, generate a "walkAwayOption".
-   - "isRecommended": Set to true if walking away/leaving on read is the highest-status play.
-   - "triggerReason": Why walking away is warranted (e.g. "2 consecutive dry responses with zero conversational reciprocal effort").
-   - "dignityRule": The psychological principle of why silence preserves frame (e.g. "Silence here is not passive-aggressive—it's matching reality.").
-   - "reEngagementCondition": The exact rule for when the user should ever re-engage (e.g. "Only respond if they reach out with a genuine question or specific plan.").
+   - If the dynamic is "Fading", if the other person is manipulative, toxic, or repeatedly low-effort, generate a "walkAwayOption".
+   - "isRecommended": Set to true if walking away/leaving on read or enforcing strict boundaries is the highest-status play.
+   - "triggerReason": Why walking away/holding boundary is warranted.
+   - "dignityRule": The psychological principle of why holding frame protects dignity.
+   - "reEngagementCondition": The exact rule for when the user should ever re-engage.
 
 4. AUTHENTIC TEXTING SYNTAX (ZERO CRINGE):
    - Real humans do not text like poets, pickup artists, or corporate influencers.
    - Length: Strictly 5 to 12 words max (unless Fast & Punchy is enabled, then 3-7 words).
-   - Casing & Punctuation: Casual, natural lowercase or minimal punctuation. Zero double exclamation marks (!!).
+   - Casing & Punctuation: Casual, natural modern phrasing. Zero double exclamation marks (!!).
    - Emojis: Strictly banned. Never use cringe romantic or goofy emojis (no 😋, 😉, 🌹, 🥺, 😏, ❤️).
-   - "safePlay": Relaxed, frictionless, unbothered (e.g. "haha all good, catch you around", "sounds good, let me know", "fair enough, talk later").
-   - "boldPlay": Polarizing, authentic, directly cutting through the games without drama or anger (e.g. "you're terrible at texting. call me later", "let's skip the small talk. drink this week?", "you only text past midnight. call me tomorrow").
 ${voiceConstraintPrompt}
 
 ### 📊 STRICT SCHEMA REQUIREMENTS:
@@ -206,13 +269,13 @@ Respond with valid, raw JSON only matching this exact schema:
   }
 }`;
 
-    const userPrompt = `Relationship Context: ${relationshipContext || "Not specified / Early dating"}
+    const userPrompt = `Relationship Context: ${relationshipContext || "Not specified"}
 Conversation Snippet:
 """
 ${conversationText}
 """
 
-Analyze this snippet with psychological accuracy and generate the structured JSON payload.`;
+Analyze this snippet with psychological accuracy and generate the structured JSON payload. Remember: If the conversation is in German or another language, generate safePlay.reply and boldPlay.reply in that language!`;
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -234,16 +297,20 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Upstream LLM error:", response.status, errorText);
-      const fallbackResult = generateIntelligentFallback(conversationText, relationshipContext, userVoiceProfile);
-      fallbackResult.transcribedText = conversationText;
-      return NextResponse.json(fallbackResult, { status: 200 });
+      return NextResponse.json(
+        { error: `LLM Reasoning Engine failed (${response.status}): ${errorText}` },
+        { status: 500 }
+      );
     }
 
     const data = await response.json();
     const rawContent = data.choices?.[0]?.message?.content;
 
     if (!rawContent) {
-      throw new Error("Empty response from LLM");
+      return NextResponse.json(
+        { error: "Empty response from reasoning model." },
+        { status: 500 }
+      );
     }
 
     const cleanedJson = rawContent
@@ -262,7 +329,9 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
     }
 
     const sanitizedResponse: AnalysisResponse = {
-      subtext: parsed.subtext || "They are giving minimal effort to keep the channel open without committing real energy or emotional exposure.",
+      subtext:
+        parsed.subtext ||
+        "They are communicating with strong underlying subtext and testing emotional boundaries.",
       status: VALID_STATUSES.includes(parsed.status as DynamicStatus)
         ? (parsed.status as DynamicStatus)
         : "Testing Frame",
@@ -271,23 +340,23 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
         : "Balanced",
       trapToAvoid:
         parsed.trapToAvoid ||
-        "Do not over-invest or ask for emotional validation to bridge the communication gap.",
+        "Do not over-invest or react emotionally before understanding the frame dynamic.",
       internalMonologue:
         parsed.internalMonologue ||
-        "I like the attention, but I want to see if they'll chase before I put in real effort.",
+        "I want to see how they respond when I reach out like this.",
       safePlay: {
         reply: safeReply,
         reasoning:
           parsed.safePlay?.reasoning ||
-          "Demonstrates outcome independence, relieves artificial pressure, and completely eliminates the needy dynamic.",
+          "Demonstrates grounded composure, relieves pressure, and maintains frame.",
         timing: parsed.safePlay?.timing || "Match their response delay",
       },
       boldPlay: {
         reply: boldReply,
         reasoning:
           parsed.boldPlay?.reasoning ||
-          "Polarizes the interaction immediately to filter for genuine 'Fuck Yes' interest versus lukewarm time-wasting.",
-        risk: parsed.boldPlay?.risk || "Filters out lukewarm interest immediately, saving you time.",
+          "Directly addresses the dynamic with radical honesty and clarity.",
+        risk: parsed.boldPlay?.risk || "Forces immediate transparency.",
       },
       walkAwayOption: parsed.walkAwayOption?.isRecommended
         ? parsed.walkAwayOption
@@ -303,151 +372,11 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
     };
 
     return NextResponse.json(sanitizedResponse, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Analysis route error:", error);
-    try {
-      const fallback = generateIntelligentFallback("General conversation analysis", "Talking Stage", undefined);
-      return NextResponse.json(fallback, { status: 200 });
-    } catch {
-      return NextResponse.json(
-        { error: "Failed to process psychological analysis. Please try again." },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json(
+      { error: error?.message || "Failed to process psychological analysis. Please try again." },
+      { status: 500 }
+    );
   }
-}
-
-/**
- * High-EQ rule-based fallback generator for immediate out-of-the-box local testing
- * or when external LLM API rate limits are encountered.
- */
-function generateIntelligentFallback(
-  messages: string,
-  context?: string,
-  userVoiceProfile?: UserVoiceProfile
-): AnalysisResponse {
-  const lower = messages.toLowerCase();
-  const contextStr = (context || "").toLowerCase();
-  const isLowercase = userVoiceProfile?.styleToggles?.allLowercase;
-
-  const fmt = (text: string) => (isLowercase ? text.toLowerCase() : text);
-
-  if (
-    lower.includes("wyd") ||
-    lower.includes("late") ||
-    lower.includes("tonight") ||
-    lower.includes("u up")
-  ) {
-    return {
-      subtext:
-        "Low-investment validation check. They are bored, seeking effortless attention, or testing your late-night availability without real planning.",
-      status: "Testing Frame",
-      energyLevel: "Low",
-      trapToAvoid:
-        "Jumping at the immediate invitation or explaining your whole evening schedule like an open book.",
-      internalMonologue:
-        "Let's see if they're sitting around waiting for me or if they have their own life going on.",
-      safePlay: {
-        reply: fmt("out with friends tonight, catch you later"),
-        reasoning:
-          "Demonstrates an active social life, declines the bait casually, and resets conversation to daytime cadence.",
-        timing: "Wait 45–60 minutes before replying",
-      },
-      boldPlay: {
-        reply: fmt("you only text past midnight. call me tomorrow instead"),
-        reasoning:
-          "Directly calls out the low-effort late-night pattern and establishes high standards with zero drama.",
-        risk: "Will filter out anyone who only wanted a casual late-night dopamine hit.",
-      },
-    };
-  }
-
-  if (
-    lower.includes("k") ||
-    lower.includes("cool") ||
-    lower.includes("haha yeah") ||
-    lower.includes("nice") ||
-    lower.includes("busy")
-  ) {
-    return {
-      subtext:
-        "Energy mismatch & conversational deceleration. They are giving minimal effort to hold the conversation at arm's length without formally closing it.",
-      status: "Fading",
-      energyLevel: "Fading",
-      trapToAvoid:
-        "Sending a double-text, asking 'are you mad at me?', or scrambling with new topics to revive interest.",
-      internalMonologue:
-        "I don't have the energy for a deep back-and-forth right now, but I don't want to be outright rude.",
-      safePlay: {
-        reply: fmt("haha yeah fair enough"),
-        reasoning:
-          "Mirroring low investment ends the one-sided dynamic and gives them space to re-engage on their own.",
-        timing: "Match delay or leave on read",
-      },
-      boldPlay: {
-        reply: fmt("don't overwhelm me with all that enthusiasm at once"),
-        reasoning:
-          "Playfully teases their dry response, exposes low effort playfully, and cleanly exits on your terms.",
-        risk: "If their interest is genuinely zero, they might not reply.",
-      },
-      walkAwayOption: {
-        isRecommended: true,
-        triggerReason: "One-sided conversational investment with minimal effort from their end.",
-        dignityRule: "Leaving on read is self-respect in action. Never chase someone who is slowly backing out the door.",
-        reEngagementCondition: "Only re-engage if they double-text or initiate with a genuine question/plan.",
-      },
-    };
-  }
-
-  if (
-    contextStr.includes("ex") ||
-    lower.includes("miss you") ||
-    lower.includes("remember when")
-  ) {
-    return {
-      subtext:
-        "Nostalgia probing & emotional temperature check. They are checking if their emotional tether to you is still active without offering accountability.",
-      status: "Testing Frame",
-      energyLevel: "Balanced",
-      trapToAvoid:
-        "Pouring out your emotional growth, reminiscing about the past, or accepting a vague 'let's catch up' with no clarity.",
-      internalMonologue:
-        "Something reminded me of them and I want to know if they still think about me as much as I think about them.",
-      safePlay: {
-        reply: fmt("hope you're doing well! life's been great here"),
-        reasoning:
-          "Warm but completely non-committal. Signals zero resentment, high abundance, and zero lingering desperation.",
-        timing: "Wait 3–4 hours before responding",
-      },
-      boldPlay: {
-        reply: fmt("nostalgia is dangerous. what made you think of that today?"),
-        reasoning:
-          "Pins them to articulate their actual intent rather than hiding behind vague nostalgic breadcrumbs.",
-        risk: "Can reignite old emotional tensions if unresolved conflicts exist.",
-      },
-    };
-  }
-
-  return {
-    subtext:
-      "They are maintaining subtle plausible deniability. The message balances warmth with cautious detachment to see if you will over-invest and lead.",
-    status: "Leading",
-    energyLevel: "Balanced",
-    trapToAvoid:
-      "Over-explaining yourself, replying within 10 seconds to a 4-hour delay, or sending a wall of text against single sentences.",
-    internalMonologue:
-      "I'm intrigued, but I want to keep things casual and see how much effort they put in first.",
-    safePlay: {
-      reply: fmt("haha all good, let's grab a drink later this week"),
-      reasoning:
-        "Keeps tone light, transitions from endless texting to an actionable meet, and filters for real interest.",
-      timing: "Match their response time roughly",
-    },
-    boldPlay: {
-      reply: fmt("let's skip the endless texting. drinks Thursday?"),
-      reasoning:
-        "Polarizing, high-status move that cuts through ambiguity and tests for authentic 'Fuck Yes' interest.",
-      risk: "Forces an immediate binary choice, weeding out lukewarm time-wasters.",
-    },
-  };
 }

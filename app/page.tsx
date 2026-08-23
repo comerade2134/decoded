@@ -446,7 +446,8 @@ export default function DecodedApp() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to decode conversation dynamics.");
+        const errorJson = await res.json().catch(() => ({}));
+        throw new Error(errorJson.error || `Failed to decode conversation (HTTP ${res.status}).`);
       }
 
       const data = (await res.json()) as AnalysisResponse;
