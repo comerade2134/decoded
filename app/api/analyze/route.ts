@@ -115,51 +115,61 @@ export async function POST(req: NextRequest) {
       for (const vModel of visionModels) {
         try {
           console.log(`Attempting Vision OCR with model: ${vModel}`);
-          const visionResponse = await fetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              model: vModel,
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text: "Transcribe all chat bubbles, sender names, and timestamps from this image word-for-word in their original language (German, English, Spanish, Arabic, etc.). Return ONLY the transcribed text dialogue without markdown commentary.",
-                    },
-                    {
-                      type: "image_url",
-                      image_url: {
-                        url: imageBase64,
+          for (let attempt = 0; attempt <= 1; attempt++) {
+            const visionResponse = await fetch(`${baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: vModel,
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      {
+                        type: "text",
+                        text: "Transcribe all chat bubbles, sender names, and timestamps from this image word-for-word in their original language (German, English, Spanish, Arabic, etc.). Return ONLY the transcribed text dialogue without markdown commentary.",
                       },
-                    },
-                  ],
-                },
-              ],
-              temperature: 0.1,
-              max_tokens: 1500,
-            }),
-          });
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: imageBase64,
+                        },
+                      },
+                    ],
+                  },
+                ],
+                temperature: 0.1,
+                max_tokens: 500,
+              }),
+            });
 
-          const visionJson = await visionResponse.json();
-          console.log(`Groq Vision Response (${vModel}):`, JSON.stringify(visionJson).slice(0, 300));
-
-          if (visionResponse.ok && visionJson.choices?.[0]?.message?.content) {
-            const rawContent = visionJson.choices[0].message.content;
-            const cleaned = extractCleanTranscription(rawContent);
-            if (cleaned && cleaned.trim().length > 0) {
-              conversationText = cleaned.trim();
-              visionSuccess = true;
-              console.log("Vision OCR successfully transcribed:", conversationText.slice(0, 150));
-              break;
+            if (visionResponse.status === 429 && attempt === 0) {
+              console.warn(`Vision model ${vModel} rate limited (429). Auto-waiting 1.8s before retry...`);
+              await new Promise((resolve) => setTimeout(resolve, 1800));
+              continue;
             }
-          } else {
-            lastVisionError = visionJson.error?.message || `HTTP ${visionResponse.status}`;
+
+            const visionJson = await visionResponse.json();
+            console.log(`Groq Vision Response (${vModel}):`, JSON.stringify(visionJson).slice(0, 300));
+
+            if (visionResponse.ok && visionJson.choices?.[0]?.message?.content) {
+              const rawContent = visionJson.choices[0].message.content;
+              const cleaned = extractCleanTranscription(rawContent);
+              if (cleaned && cleaned.trim().length > 0) {
+                conversationText = cleaned.trim();
+                visionSuccess = true;
+                console.log("Vision OCR successfully transcribed:", conversationText.slice(0, 150));
+                break;
+              }
+            } else {
+              lastVisionError = visionJson.error?.message || `HTTP ${visionResponse.status}`;
+            }
+            break;
           }
+          if (visionSuccess) break;
         } catch (vErr: any) {
           console.error(`Vision model ${vModel} error:`, vErr);
           lastVisionError = vErr.message;

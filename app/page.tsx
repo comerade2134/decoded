@@ -175,8 +175,8 @@ function compressImageToBase64(file: File): Promise<string> {
     reader.onload = (readerEvent) => {
       const img = new Image();
       img.onload = () => {
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
         let width = img.width;
         let height = img.height;
 
@@ -201,7 +201,7 @@ function compressImageToBase64(file: File): Promise<string> {
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
         resolve(dataUrl);
       };
       img.onerror = reject;
