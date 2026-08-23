@@ -87,9 +87,8 @@ export async function POST(req: NextRequest) {
       process.env.LLM_BASE_URL ||
       process.env.OPENAI_BASE_URL ||
       "https://api.groq.com/openai/v1";
-    const textModel =
-      process.env.LLM_MODEL ||
-      (baseUrl.includes("groq.com") ? "openai/gpt-oss-120b" : "gpt-4o-mini");
+    const textModel = process.env.LLM_MODEL || "llama-3.1-8b-instant";
+    const fallbackTextModel = "llama-3.1-8b-instant";
 
     const visionModels = [
       process.env.VISION_MODEL || "llama-3.2-11b-vision-preview",
@@ -277,7 +276,7 @@ ${conversationText}
 
 Analyze this snippet with psychological accuracy and generate the structured JSON payload. Remember: If the conversation is in German or another language, generate safePlay.reply and boldPlay.reply in that language!`;
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    let response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -293,6 +292,26 @@ Analyze this snippet with psychological accuracy and generate the structured JSO
         response_format: { type: "json_object" },
       }),
     });
+
+    if (!response.ok && textModel !== fallbackTextModel) {
+      console.warn(`Primary text model ${textModel} failed (${response.status}). Retrying with fallback: ${fallbackTextModel}`);
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: fallbackTextModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.6,
+          response_format: { type: "json_object" },
+        }),
+      });
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
