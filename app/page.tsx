@@ -175,8 +175,8 @@ function compressImageToBase64(file: File): Promise<string> {
     reader.onload = (readerEvent) => {
       const img = new Image();
       img.onload = () => {
-        const MAX_WIDTH = 1024;
-        const MAX_HEIGHT = 1024;
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 1200;
         let width = img.width;
         let height = img.height;
 

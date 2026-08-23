@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
     const textModel =
       process.env.LLM_MODEL ||
       (baseUrl.includes("groq.com") ? "openai/gpt-oss-120b" : "gpt-4o-mini");
-    const visionModel = "qwen/qwen3.6-27b";
+    const primaryVisionModel = process.env.VISION_MODEL || "llama-3.2-11b-vision-preview";
+    const fallbackVisionModel = "qwen/qwen3.6-27b";
 
     let conversationText = (messages || "").trim();
 
@@ -48,35 +49,54 @@ export async function POST(req: NextRequest) {
     if (imageBase64 && imageBase64.startsWith("data:image/")) {
       if (apiKey) {
         try {
-          const visionResponse = await fetch(`${baseUrl}/chat/completions`, {
+          const visionPrompt = [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "You are an expert OCR transcription engine. Accurately transcribe all visible chat messages, senders, and timestamps from this chat screenshot regardless of language (including German, English, Spanish, Arabic, slang, abbreviations, and emojis). Return ONLY the transcribed dialogue, without commentary.",
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: imageBase64,
+                  },
+                },
+              ],
+            },
+          ];
+
+          let visionResponse = await fetch(`${baseUrl}/chat/completions`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${apiKey}`,
             },
             body: JSON.stringify({
-              model: visionModel,
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text: "You are an expert OCR transcription engine. Accurately transcribe all visible chat messages, senders, and timestamps from this screenshot regardless of language (e.g. German, English, Spanish, Arabic). Return ONLY the transcribed text dialogue, without pleasantries.",
-                    },
-                    {
-                      type: "image_url",
-                      image_url: {
-                        url: imageBase64,
-                      },
-                    },
-                  ],
-                },
-              ],
+              model: primaryVisionModel,
+              messages: visionPrompt,
               temperature: 0.1,
               max_tokens: 800,
             }),
           });
+
+          // Fallback to active vision model if primary model was decommissioned
+          if (!visionResponse.ok) {
+            visionResponse = await fetch(`${baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: fallbackVisionModel,
+                messages: visionPrompt,
+                temperature: 0.1,
+                max_tokens: 800,
+              }),
+            });
+          }
 
           if (visionResponse.ok) {
             const visionData = await visionResponse.json();
