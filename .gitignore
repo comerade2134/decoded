@@ -4,6 +4,10 @@
 .pnp.js
 .yarn/install-state.gz
 
+# agent & skills junk
+.agents/
+skills-lock.json
+
 # testing
 /coverage
 
