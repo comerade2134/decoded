@@ -1,6 +1,7 @@
 export type DynamicStatus =
   | "They Are Chasing"
   | "Leading"
+  | "Testing Waters"
   | "Chasing"
   | "Balanced"
   | "Fading"

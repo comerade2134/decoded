@@ -13,6 +13,7 @@ export const runtime = "edge";
 const VALID_STATUSES: DynamicStatus[] = [
   "They Are Chasing",
   "Leading",
+  "Testing Waters",
   "Chasing",
   "Balanced",
   "Fading",
@@ -178,17 +179,19 @@ ${
 
 3. 🎯 SENDER & USER FRAME STATUS CLASSIFICATION (CRITICAL MANDATE):
    - "status" strictly represents the interaction dynamic:
-     * "They Are Chasing" (or "Leading"): MUST be assigned whenever the OTHER person is pleading, begging, sending emotional walls of text, apologies, urgency, or asking for chances ("es probieren", "gib mir eine chance", "bitte", "ich kann nicht ohne dich").
+     * "Testing Waters": MUST be assigned whenever the incoming message is a 1-word or low-effort ping, breadcrumb, late-night ping, or minimal check-in (e.g. "Hi", "hey", "wyd", memes without context, casual 1-liner). NEVER assign "They Are Chasing" or "High" energy for a simple low-effort ping!
+     * "They Are Chasing" (or "Leading"): MUST be assigned whenever the OTHER person is sending multiple paragraphs, emotional explanations, begging, apologies, urgency, rapid double/triple texting, or desperate reconciliation pleas ("es probieren", "gib mir eine chance", "bitte", "ich kann nicht ohne dich").
      * "Chasing": ONLY use this if the USER is the one desperately double-texting, over-explaining, or begging for validation.
-     * "Balanced": Mutual equal investment and cadence.
+     * "Balanced": Mutual equal investment, casual banter, and matching cadence.
      * "Testing Frame": Other person is shit-testing or testing boundaries.
      * "Fading": ONLY use this when the counterparty is giving cold, delayed, dry 1-word answers (e.g. "k", "nice", "haha yeah", ghosting, taking days to reply). NEVER assign "Fading" when the other person is actively pleading or double-texting!
 
 4. ⚡ ENERGY LEVEL CLASSIFICATION:
    - "energyLevel":
-     * "High": MUST be assigned whenever there is high emotional output, pleading, begging, urgency, walls of text, or passionate flirting.
+     * "Low": MUST be assigned for 1-word pings, low-effort check-ins ("Hi", "hey", "wyd"), breadcrumbs, or sparse delays.
      * "Balanced": Normal, steady conversational flow.
-     * "Low" or "Fading": ONLY when messages are dry, minimal 1-word responses, or sparse delays.
+     * "High": MUST be assigned whenever there is high emotional output, pleading, begging, urgency, walls of text, rapid double-texting, or passionate flirting.
+     * "Fading": Only for active ghosting or severe withdrawal.
 
 5. 🧠 "internalMonologue" REPRESENTS THE OTHER PERSON:
    - "internalMonologue" MUST capture the OTHER PERSON'S raw, unfiltered emotional calculations, private insecurities, and inner panic as they type to the user. NEVER write the user's thoughts here.
@@ -199,9 +202,12 @@ ${
    - Ensure all verbs and separable particles (e.g. "runterkommen", "abstand nehmen", "telefonieren") are fully present and idiomatic.
 
 7. 💬 ADAPTIVE HIGH-EQ PLAYS:
-   - Tailor the Safe Play and Bold Play to directly address the specific emotion and language in the transcript:
-     * Safe Play: Calm, unbothered, de-escalating while holding clear personal frame.
-     * Bold Play: Decisive, high-status boundary or clear finality without hostility.
+   - Safe Play:
+     * For LOW-EFFORT PINGS ("Hi", "hey", "wyd"): STRICTLY MATCH EFFORT. Keep it low-investment, relaxed, and casual (e.g. "hey, what's up" or "hey" — NEVER eager phrases like "hey, how's it going?" or asking eager questions!).
+     * For PLEADING / CHASING: Calm, unbothered, de-escalating while holding clear personal frame.
+   - Bold Play:
+     * For LOW-EFFORT PINGS: Subtle challenge or playful polarity (e.g., "what's up? didn't expect to hear from you." or "hey stranger").
+     * For PLEADING / CHASING: Decisive, high-status boundary or clear finality without hostility.
    - If the chat is in German, replies must sound 100% natural, modern, and colloquial.
    - If the chat is in English, replies must sound effortless and grounded.
 
@@ -223,14 +229,14 @@ ${
 ${voiceConstraintPrompt}
 
 ### 📊 STRICT SCHEMA REQUIREMENTS:
-- "status": Strictly one of: "They Are Chasing" | "Leading" | "Chasing" | "Balanced" | "Fading" | "Testing Frame".
+- "status": Strictly one of: "They Are Chasing" | "Leading" | "Testing Waters" | "Chasing" | "Balanced" | "Fading" | "Testing Frame".
 - "energyLevel": Strictly one of: "High" | "Balanced" | "Low" | "Fading".
 
 ### OUTPUT FORMAT:
 Respond with valid, raw JSON only matching this exact schema:
 {
   "subtext": string,
-  "status": "They Are Chasing" | "Leading" | "Chasing" | "Balanced" | "Fading" | "Testing Frame",
+  "status": "They Are Chasing" | "Leading" | "Testing Waters" | "Chasing" | "Balanced" | "Fading" | "Testing Frame",
   "energyLevel": "High" | "Balanced" | "Low" | "Fading",
   "trapToAvoid": string,
   "internalMonologue": string,

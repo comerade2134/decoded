@@ -535,6 +535,12 @@ export default function DecodedApp() {
           icon: TrendingUp,
           label: "You Hold Frame",
         };
+      case "Testing Waters":
+        return {
+          bg: "bg-cyan-500/10 text-cyan-300 border-cyan-500/30",
+          icon: Sparkles,
+          label: "Testing Waters / Breadcrumb",
+        };
       case "Chasing":
         return {
           bg: "bg-amber-500/10 text-amber-400 border-amber-500/30",
