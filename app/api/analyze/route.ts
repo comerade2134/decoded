@@ -11,8 +11,9 @@ export const maxDuration = 30;
 export const runtime = "edge";
 
 const VALID_STATUSES: DynamicStatus[] = [
-  "Chasing",
+  "They Are Chasing",
   "Leading",
+  "Chasing",
   "Balanced",
   "Fading",
   "Testing Frame",
@@ -175,55 +176,61 @@ ${
 2. 🏷️ PRIORITY 2 (BACKGROUND METADATA ONLY):
    - The Relationship Context tag is secondary background history. It tells you the past label between the two people, NEVER their real-time behavior. It must NEVER override or contradict what is written in the transcript.
 
-3. 🎯 SENDER & USER FRAME STATUS CLASSIFICATION:
-   - "status" in the JSON schema strictly represents the USER'S frame position in the UI:
-     * "Leading" -> (UI renders "You Hold Frame"): Classify as "Leading" whenever the OTHER person is chasing, sending desperate pleas, long paragraphs, apologies, or begging while the user remains composed, grounded, and concise.
-     * "Chasing" -> (UI renders "You Are Chasing"): ONLY use this if the USER is the one desperately double-texting, over-explaining, or begging for validation.
-     * "Balanced" -> (UI renders "Balanced Frame"): Mutual equal investment and cadence.
-     * "Testing Frame" -> (UI renders "Testing Frame"): Other person is shit-testing or testing boundaries.
-     * "Fading" -> (UI renders "Interest Fading"): Other person is pulling away, giving cold one-word replies, or ghosting.
+3. 🎯 SENDER & USER FRAME STATUS CLASSIFICATION (CRITICAL MANDATE):
+   - "status" strictly represents the interaction dynamic:
+     * "They Are Chasing" (or "Leading"): MUST be assigned whenever the OTHER person is pleading, begging, sending emotional walls of text, apologies, urgency, or asking for chances ("es probieren", "gib mir eine chance", "bitte", "ich kann nicht ohne dich").
+     * "Chasing": ONLY use this if the USER is the one desperately double-texting, over-explaining, or begging for validation.
+     * "Balanced": Mutual equal investment and cadence.
+     * "Testing Frame": Other person is shit-testing or testing boundaries.
+     * "Fading": ONLY use this when the counterparty is giving cold, delayed, dry 1-word answers (e.g. "k", "nice", "haha yeah", ghosting, taking days to reply). NEVER assign "Fading" when the other person is actively pleading or double-texting!
 
-4. 🧠 "internalMonologue" REPRESENTS THE OTHER PERSON:
+4. ⚡ ENERGY LEVEL CLASSIFICATION:
+   - "energyLevel":
+     * "High": MUST be assigned whenever there is high emotional output, pleading, begging, urgency, walls of text, or passionate flirting.
+     * "Balanced": Normal, steady conversational flow.
+     * "Low" or "Fading": ONLY when messages are dry, minimal 1-word responses, or sparse delays.
+
+5. 🧠 "internalMonologue" REPRESENTS THE OTHER PERSON:
    - "internalMonologue" MUST capture the OTHER PERSON'S raw, unfiltered emotional calculations, private insecurities, and inner panic as they type to the user. NEVER write the user's thoughts here.
 
-5. 🇩🇪 GERMAN GRAMMAR & IDIOMATIC INTEGRITY (MANDATORY):
+6. 🇩🇪 GERMAN GRAMMAR & IDIOMATIC INTEGRITY (MANDATORY):
    - Every German reply MUST be a grammatically complete, natural sentence. NEVER drop necessary verbs or truncate clauses under word constraints (e.g. write "lass uns erst mal Abstand halten/nehmen", NEVER truncate to incomplete phrases like "lass uns erstmal abstand").
-   - In farewell/closure contexts, ALWAYS use the correct idiom "ich wünsche dir trotzdem alles Gute" (with "Gute" ending in -e), NEVER "alles gut".
+   - In farewell/closure/breakup contexts, ALWAYS use the correct idiom "ich wünsche dir trotzdem alles Gute" (with "Gute" ending in -e) or "alles Gute, lass uns erst mal Abstand nehmen". NEVER write "alles gut" when saying goodbye or setting distance!
    - Ensure all verbs and separable particles (e.g. "runterkommen", "abstand nehmen", "telefonieren") are fully present and idiomatic.
 
-6. 💬 ADAPTIVE HIGH-EQ PLAYS:
+7. 💬 ADAPTIVE HIGH-EQ PLAYS:
    - Tailor the Safe Play and Bold Play to directly address the specific emotion and language in the transcript:
      * Safe Play: Calm, unbothered, de-escalating while holding clear personal frame.
      * Bold Play: Decisive, high-status boundary or clear finality without hostility.
    - If the chat is in German, replies must sound 100% natural, modern, and colloquial.
    - If the chat is in English, replies must sound effortless and grounded.
 
-7. ⏱️ STRATEGIC TIMING DISCIPLINE:
+8. ⏱️ STRATEGIC TIMING DISCIPLINE:
    - When the other person is sending desperate, frantic, or pleading messages, NEVER prescribe "immediate" timing.
    - Prescribe composed timing (e.g. "Wait 2–4 hours or reply tomorrow morning so the emotional storm calms down and you do not react from impulse").
 
-8. 🛑 "WALK AWAY" DIGNITY DIAGNOSTIC:
+9. 🛑 "WALK AWAY" DIGNITY DIAGNOSTIC:
    - If the dynamic is "Fading", or if the other person is manipulative, toxic, or repeatedly low-effort, generate a "walkAwayOption".
    - "isRecommended": Set to true if holding firm boundaries or leaving on read is the highest-status move.
    - "triggerReason": Why holding frame is warranted.
    - "dignityRule": The psychological principle of why holding frame protects dignity.
    - "reEngagementCondition": The exact rule for when the user should ever re-engage.
 
-9. 💬 ZERO-CRINGE SYNTAX CONSTRAINTS:
+10. 💬 ZERO-CRINGE SYNTAX CONSTRAINTS:
    - Length: Strictly 5 to 16 words max (ensuring no German verbs or particles are truncated).
    - Casing & Punctuation: Casual, natural modern phrasing. Zero double exclamation marks (!!).
    - Emojis: Strictly banned. Never use cringe romantic emojis (no 😋, 😉, 🌹, 🥺, 😏, ❤️).
 ${voiceConstraintPrompt}
 
 ### 📊 STRICT SCHEMA REQUIREMENTS:
-- "status": Strictly one of: "Chasing" | "Leading" | "Balanced" | "Fading" | "Testing Frame".
+- "status": Strictly one of: "They Are Chasing" | "Leading" | "Chasing" | "Balanced" | "Fading" | "Testing Frame".
 - "energyLevel": Strictly one of: "High" | "Balanced" | "Low" | "Fading".
 
 ### OUTPUT FORMAT:
 Respond with valid, raw JSON only matching this exact schema:
 {
   "subtext": string,
-  "status": "Chasing" | "Leading" | "Balanced" | "Fading" | "Testing Frame",
+  "status": "They Are Chasing" | "Leading" | "Chasing" | "Balanced" | "Fading" | "Testing Frame",
   "energyLevel": "High" | "Balanced" | "Low" | "Fading",
   "trapToAvoid": string,
   "internalMonologue": string,

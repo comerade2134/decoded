@@ -1,6 +1,7 @@
 export type DynamicStatus =
-  | "Chasing"
+  | "They Are Chasing"
   | "Leading"
+  | "Chasing"
   | "Balanced"
   | "Fading"
   | "Testing Frame";

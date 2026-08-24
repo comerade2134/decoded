@@ -523,6 +523,12 @@ export default function DecodedApp() {
 
   const getStatusBadge = (status: DynamicStatus) => {
     switch (status) {
+      case "They Are Chasing":
+        return {
+          bg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+          icon: TrendingUp,
+          label: "They Are Chasing",
+        };
       case "Leading":
         return {
           bg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
