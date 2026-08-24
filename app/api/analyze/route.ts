@@ -105,9 +105,19 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as AnalysisRequest;
     const { messages, imageBase64, relationshipContext, userVoiceProfile } = body;
 
-    const geminiKey = process.env.GEMINI_API_KEY;
-    const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY;
-    const groqKey = process.env.GROQ_API_KEY;
+    const geminiKey =
+      process.env.GEMINI_API_KEY ||
+      (process.env.LLM_API_KEY?.startsWith("AQ.") || process.env.LLM_API_KEY?.startsWith("AIza")
+        ? process.env.LLM_API_KEY
+        : undefined);
+
+    const openrouterKey =
+      process.env.OPENROUTER_API_KEY ||
+      (process.env.LLM_API_KEY?.startsWith("sk-or-") ? process.env.LLM_API_KEY : undefined);
+
+    const groqKey =
+      process.env.GROQ_API_KEY ||
+      (process.env.LLM_API_KEY?.startsWith("gsk_") ? process.env.LLM_API_KEY : undefined);
 
     const hasImage = Boolean(imageBase64 && imageBase64.startsWith("data:image/"));
     const conversationText = (messages || "").trim();
