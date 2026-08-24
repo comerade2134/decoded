@@ -7,6 +7,7 @@ import {
   UserVoiceProfile,
 } from "@/lib/types";
 
+export const maxDuration = 30;
 export const runtime = "edge";
 
 const VALID_STATUSES: DynamicStatus[] = [
@@ -44,7 +45,6 @@ function extractJsonBlock(rawText: string): any {
 
   try {
     const parsed = JSON.parse(cleaned);
-    // Normalize snake_case keys if returned by certain models
     return {
       subtext: parsed.subtext || parsed.psychological_subtext || parsed.psychologicalSubtext,
       status: parsed.status || parsed.frame_dynamics || parsed.frameDynamics,
@@ -65,8 +65,12 @@ async function callOpenAIEndpoint(
   apiKey: string,
   model: string,
   messages: any[],
-  extraHeaders: Record<string, string> = {}
+  extraHeaders: Record<string, string> = {},
+  timeoutMs = 5000
 ): Promise<{ ok: boolean; status: number; data?: any; error?: string }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -82,7 +86,10 @@ async function callOpenAIEndpoint(
         max_tokens: 1000,
         response_format: { type: "json_object" },
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}));
@@ -96,6 +103,10 @@ async function callOpenAIEndpoint(
     const data = await response.json();
     return { ok: true, status: 200, data };
   } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      return { ok: false, status: 408, error: "Model request timed out (>5s)" };
+    }
     return { ok: false, status: 500, error: err.message || "Network error" };
   }
 }
@@ -271,18 +282,20 @@ Analyze this transcript with psychological accuracy based on the empirical evide
     let lastError = "";
 
     // ==========================================
-    // STEP 1: DIRECT GOOGLE GEMINI (NATIVE MULTIMODAL)
+    // STEP 1: DIRECT GOOGLE GEMINI (NATIVE MULTIMODAL - SUB-SECOND)
     // ==========================================
     if (geminiKey) {
-      const geminiModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.7-flash"];
+      const geminiModels = ["gemini-2.5-flash", "gemini-3.6-flash"];
       for (const gModel of geminiModels) {
         try {
-          console.log(`[Cascade Step 1] Calling Google Gemini model: ${gModel}`);
+          console.log(`[Cascade Step 1] Calling Google Gemini: ${gModel}`);
           const res = await callOpenAIEndpoint(
             "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             geminiKey,
             gModel,
-            messagesPayload
+            messagesPayload,
+            {},
+            5000
           );
 
           if (res.ok && res.data?.choices?.[0]?.message?.content) {
@@ -306,10 +319,9 @@ Analyze this transcript with psychological accuracy based on the empirical evide
     // ==========================================
     if (!parsedResult && openrouterKey) {
       const openrouterModels = [
-        process.env.LLM_MODEL || "thinkingmachines/inkling:free",
         "openai/gpt-4o-mini",
-        "google/gemini-2.0-flash-exp:free",
         "openrouter/free",
+        process.env.LLM_MODEL || "thinkingmachines/inkling:free",
       ].filter((m, i, arr) => arr.indexOf(m) === i);
 
       for (const oModel of openrouterModels) {
@@ -323,7 +335,8 @@ Analyze this transcript with psychological accuracy based on the empirical evide
             {
               "HTTP-Referer": "https://decoded.vercel.app",
               "X-Title": "Decoded OS",
-            }
+            },
+            5000
           );
 
           if (res.ok && res.data?.choices?.[0]?.message?.content) {
@@ -348,7 +361,6 @@ Analyze this transcript with psychological accuracy based on the empirical evide
     if (!parsedResult && groqKey) {
       let groqConversationText = conversationText;
 
-      // If image provided and Groq is called, perform fast Vision OCR
       if (hasImage && !groqConversationText) {
         console.log("[Cascade Step 3] Calling Groq Vision OCR (qwen/qwen3.6-27b)...");
         try {
@@ -373,7 +385,9 @@ Return only dialogue.`,
                   },
                 ],
               },
-            ]
+            ],
+            {},
+            4500
           );
 
           if (ocrRes.ok && ocrRes.data?.choices?.[0]?.message?.content) {
@@ -409,7 +423,9 @@ Analyze this transcript with psychological accuracy.`,
             "https://api.groq.com/openai/v1/chat/completions",
             groqKey,
             gqModel,
-            groqPayload
+            groqPayload,
+            {},
+            4500
           );
 
           if (res.ok && res.data?.choices?.[0]?.message?.content) {
