@@ -27,11 +27,11 @@ const VALID_ENERGY_LEVELS: EnergyLevel[] = [
 function extractJsonBlock(rawText: string): any {
   if (!rawText) return null;
 
-  // 1. Strip think blocks if any
+  // 1. Strip think blocks or thought tags
   let cleaned = rawText.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   cleaned = cleaned.replace(/<\/?think>/gi, "").trim();
 
-  // 2. Extract from markdown fences or first curly bracket
+  // 2. Extract from markdown fences or first outer curly braces
   const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (fenceMatch) {
     cleaned = fenceMatch[1].trim();
@@ -43,9 +43,60 @@ function extractJsonBlock(rawText: string): any {
   }
 
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    // Normalize snake_case keys if returned by certain models
+    return {
+      subtext: parsed.subtext || parsed.psychological_subtext || parsed.psychologicalSubtext,
+      status: parsed.status || parsed.frame_dynamics || parsed.frameDynamics,
+      energyLevel: parsed.energyLevel || parsed.energy_level || parsed.energy,
+      trapToAvoid: parsed.trapToAvoid || parsed.trap_to_avoid || parsed.needyTrap,
+      internalMonologue: parsed.internalMonologue || parsed.internal_monologue || parsed.unfilteredInternalMonologue,
+      safePlay: parsed.safePlay || parsed.safe_play || parsed.play1,
+      boldPlay: parsed.boldPlay || parsed.bold_play || parsed.play2,
+      walkAwayOption: parsed.walkAwayOption || parsed.walk_away_option || parsed.walkAwayPlay,
+    };
   } catch {
     return null;
+  }
+}
+
+async function callOpenAIEndpoint(
+  url: string,
+  apiKey: string,
+  model: string,
+  messages: any[],
+  extraHeaders: Record<string, string> = {}
+): Promise<{ ok: boolean; status: number; data?: any; error?: string }> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        ...extraHeaders,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.6,
+        max_tokens: 1000,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      return {
+        ok: false,
+        status: response.status,
+        error: errBody.error?.message || `HTTP ${response.status}`,
+      };
+    }
+
+    const data = await response.json();
+    return { ok: true, status: 200, data };
+  } catch (err: any) {
+    return { ok: false, status: 500, error: err.message || "Network error" };
   }
 }
 
@@ -54,29 +105,9 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as AnalysisRequest;
     const { messages, imageBase64, relationshipContext, userVoiceProfile } = body;
 
-    const apiKey =
-      process.env.LLM_API_KEY ||
-      process.env.OPENROUTER_API_KEY ||
-      process.env.OPENAI_API_KEY;
-    const baseUrl =
-      process.env.LLM_BASE_URL ||
-      "https://openrouter.ai/api/v1";
-    const primaryModel =
-      process.env.LLM_MODEL ||
-      "thinkingmachines/inkling:free";
-
-    const candidateModels = [
-      primaryModel,
-      "openai/gpt-4o-mini",
-      "openrouter/free",
-    ].filter((m, i, arr) => arr.indexOf(m) === i);
-
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "LLM_API_KEY is not configured on the server." },
-        { status: 500 }
-      );
-    }
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY;
+    const groqKey = process.env.GROQ_API_KEY;
 
     const hasImage = Boolean(imageBase64 && imageBase64.startsWith("data:image/"));
     const conversationText = (messages || "").trim();
@@ -221,60 +252,181 @@ Analyze this transcript with psychological accuracy based on the empirical evide
       userContent = userPromptText;
     }
 
+    const messagesPayload = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ];
+
     let parsedResult: any = null;
     let lastError = "";
 
-    for (const modelToTry of candidateModels) {
-      try {
-        console.log(`Calling OpenRouter with model: ${modelToTry}`);
-        const response = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-            "HTTP-Referer": "https://decoded.vercel.app",
-            "X-Title": "Decoded OS",
-          },
-          body: JSON.stringify({
-            model: modelToTry,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userContent },
-            ],
-            temperature: 0.6,
-            max_tokens: 1000,
-            response_format: { type: "json_object" },
-          }),
-        });
+    // ==========================================
+    // STEP 1: DIRECT GOOGLE GEMINI (NATIVE MULTIMODAL)
+    // ==========================================
+    if (geminiKey) {
+      const geminiModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.7-flash"];
+      for (const gModel of geminiModels) {
+        try {
+          console.log(`[Cascade Step 1] Calling Google Gemini model: ${gModel}`);
+          const res = await callOpenAIEndpoint(
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            geminiKey,
+            gModel,
+            messagesPayload
+          );
 
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          lastError = errBody.error?.message || `HTTP ${response.status}`;
-          console.warn(`Model ${modelToTry} returned error (${response.status}): ${lastError}`);
-          continue;
-        }
-
-        const data = await response.json();
-        const rawContent = data.choices?.[0]?.message?.content;
-        if (rawContent) {
-          parsedResult = extractJsonBlock(rawContent);
-          if (parsedResult && parsedResult.subtext && parsedResult.safePlay?.reply) {
-            console.log(`Successfully parsed response from model: ${modelToTry}`);
-            break;
+          if (res.ok && res.data?.choices?.[0]?.message?.content) {
+            parsedResult = extractJsonBlock(res.data.choices[0].message.content);
+            if (parsedResult && parsedResult.subtext && parsedResult.safePlay?.reply) {
+              console.log(`✅ [Step 1: Gemini] Success with model: ${gModel}`);
+              break;
+            }
+          } else {
+            lastError = `Gemini (${gModel}): ${res.error}`;
+            console.warn(`[Step 1: Gemini] ${gModel} failed (${res.status}): ${res.error}`);
           }
+        } catch (e: any) {
+          lastError = `Gemini (${gModel}): ${e.message}`;
         }
-      } catch (err: any) {
-        console.error(`Error calling model ${modelToTry}:`, err);
-        lastError = err.message || "Network error";
       }
     }
 
-    if (!parsedResult) {
+    // ==========================================
+    // STEP 2: OPENROUTER MULTIMODAL FAILOVER
+    // ==========================================
+    if (!parsedResult && openrouterKey) {
+      const openrouterModels = [
+        process.env.LLM_MODEL || "thinkingmachines/inkling:free",
+        "openai/gpt-4o-mini",
+        "google/gemini-2.0-flash-exp:free",
+        "openrouter/free",
+      ].filter((m, i, arr) => arr.indexOf(m) === i);
+
+      for (const oModel of openrouterModels) {
+        try {
+          console.log(`[Cascade Step 2] Calling OpenRouter model: ${oModel}`);
+          const res = await callOpenAIEndpoint(
+            "https://openrouter.ai/api/v1/chat/completions",
+            openrouterKey,
+            oModel,
+            messagesPayload,
+            {
+              "HTTP-Referer": "https://decoded.vercel.app",
+              "X-Title": "Decoded OS",
+            }
+          );
+
+          if (res.ok && res.data?.choices?.[0]?.message?.content) {
+            parsedResult = extractJsonBlock(res.data.choices[0].message.content);
+            if (parsedResult && parsedResult.subtext && parsedResult.safePlay?.reply) {
+              console.log(`✅ [Step 2: OpenRouter] Success with model: ${oModel}`);
+              break;
+            }
+          } else {
+            lastError = `OpenRouter (${oModel}): ${res.error}`;
+            console.warn(`[Step 2: OpenRouter] ${oModel} failed (${res.status}): ${res.error}`);
+          }
+        } catch (e: any) {
+          lastError = `OpenRouter (${oModel}): ${e.message}`;
+        }
+      }
+    }
+
+    // ==========================================
+    // STEP 3: GROQ MULTIMODAL / REASONING PIPELINE FAILOVER
+    // ==========================================
+    if (!parsedResult && groqKey) {
+      let groqConversationText = conversationText;
+
+      // If image provided and Groq is called, perform fast Vision OCR
+      if (hasImage && !groqConversationText) {
+        console.log("[Cascade Step 3] Calling Groq Vision OCR (qwen/qwen3.6-27b)...");
+        try {
+          const ocrRes = await callOpenAIEndpoint(
+            "https://api.groq.com/openai/v1/chat/completions",
+            groqKey,
+            "qwen/qwen3.6-27b",
+            [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: `Transcribe all chat bubbles and senders from this image accurately:
+- Left: Them
+- Right: You
+Return only dialogue.`,
+                  },
+                  {
+                    type: "image_url",
+                    image_url: { url: imageBase64 },
+                  },
+                ],
+              },
+            ]
+          );
+
+          if (ocrRes.ok && ocrRes.data?.choices?.[0]?.message?.content) {
+            groqConversationText = ocrRes.data.choices[0].message.content
+              .replace(/<think>[\s\S]*?<\/think>/gi, "")
+              .trim();
+          }
+        } catch (ocrErr: any) {
+          console.warn("Groq OCR step failed:", ocrErr.message);
+        }
+      }
+
+      const groqPayload = [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: `Empirical Chat Transcript (Primary Ground Truth):
+"""
+${groqConversationText || conversationText || "Image chat interaction"}
+"""
+
+Background Relationship Tag: ${relationshipContext || "Not specified"}
+
+Analyze this transcript with psychological accuracy.`,
+        },
+      ];
+
+      const groqModels = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
+      for (const gqModel of groqModels) {
+        try {
+          console.log(`[Cascade Step 3] Calling Groq Reasoning model: ${gqModel}`);
+          const res = await callOpenAIEndpoint(
+            "https://api.groq.com/openai/v1/chat/completions",
+            groqKey,
+            gqModel,
+            groqPayload
+          );
+
+          if (res.ok && res.data?.choices?.[0]?.message?.content) {
+            parsedResult = extractJsonBlock(res.data.choices[0].message.content);
+            if (parsedResult && parsedResult.subtext && parsedResult.safePlay?.reply) {
+              console.log(`✅ [Step 3: Groq] Success with model: ${gqModel}`);
+              break;
+            }
+          } else {
+            lastError = `Groq (${gqModel}): ${res.error}`;
+            console.warn(`[Step 3: Groq] ${gqModel} failed (${res.status}): ${res.error}`);
+          }
+        } catch (e: any) {
+          lastError = `Groq (${gqModel}): ${e.message}`;
+        }
+      }
+    }
+
+    // ==========================================
+    // ERROR HANDLER: ALL FREE POOLS SATURATED
+    // ==========================================
+    if (!parsedResult || !parsedResult.subtext) {
       return NextResponse.json(
         {
-          error: `Failed to decode conversation via OpenRouter: ${lastError || "Could not parse JSON response"}. Please try again.`,
+          error: `All AI provider free tiers (Google Gemini, OpenRouter, Groq) are temporarily saturated or rate-limited: ${lastError || "Could not parse response"}. Please retry in 10 seconds.`,
         },
-        { status: 500 }
+        { status: 503 }
       );
     }
 
@@ -286,6 +438,10 @@ Analyze this transcript with psychological accuracy based on the empirical evide
       ? parsedResult.energyLevel
       : "Balanced";
 
+    const safePlayObj = parsedResult.safePlay || {};
+    const boldPlayObj = parsedResult.boldPlay || {};
+    const walkAwayObj = parsedResult.walkAwayOption || {};
+
     const analysisResponse: AnalysisResponse = {
       subtext: parsedResult.subtext || "Subtext decoded from empirical evidence.",
       status: sanitizedStatus,
@@ -293,20 +449,20 @@ Analyze this transcript with psychological accuracy based on the empirical evide
       trapToAvoid: parsedResult.trapToAvoid || "Reacting impulsively or forfeiting personal boundaries.",
       internalMonologue: parsedResult.internalMonologue || "Processing interaction dynamic...",
       safePlay: {
-        reply: parsedResult.safePlay?.reply || "Alles klar, danke dir.",
-        reasoning: parsedResult.safePlay?.reasoning || "Maintains grounded composure and personal frame.",
-        timing: parsedResult.safePlay?.timing || "Wait 2–4 hours or reply when calm.",
+        reply: safePlayObj.reply || "Alles klar, danke dir.",
+        reasoning: safePlayObj.reasoning || "Maintains grounded composure and personal frame.",
+        timing: safePlayObj.timing || "Wait 2–4 hours or reply when calm.",
       },
       boldPlay: {
-        reply: parsedResult.boldPlay?.reply || "Lass uns das persönlich klären.",
-        reasoning: parsedResult.boldPlay?.reasoning || "Decisive boundary setting.",
-        risk: parsedResult.boldPlay?.risk || "May provoke emotional pushback.",
+        reply: boldPlayObj.reply || "Lass uns das persönlich klären.",
+        reasoning: boldPlayObj.reasoning || "Decisive boundary setting.",
+        risk: boldPlayObj.risk || "May provoke emotional pushback.",
       },
-      walkAwayOption: parsedResult.walkAwayOption || {
-        isRecommended: false,
-        triggerReason: "No immediate boundary breach detected.",
-        dignityRule: "Preserve dignity by matching effort.",
-        reEngagementCondition: "When mutual respect and effort are restored.",
+      walkAwayOption: {
+        isRecommended: Boolean(walkAwayObj.isRecommended),
+        triggerReason: walkAwayObj.triggerReason || "No immediate boundary breach detected.",
+        dignityRule: walkAwayObj.dignityRule || "Preserve dignity by matching effort.",
+        reEngagementCondition: walkAwayObj.reEngagementCondition || "When mutual respect and effort are restored.",
       },
     };
 
