@@ -1216,9 +1216,9 @@ export default function DecodedApp() {
                 variants={resultItemVariants}
                 className="p-5 sm:p-6 rounded-2xl bg-rose-950/30 border border-rose-900/60 flex flex-col gap-4 relative shadow-xl overflow-hidden mt-2 transform-gpu"
               >
-                <div className="flex items-center justify-between">
-                  <span className="px-3 py-1 rounded-full text-xs font-bold font-mono bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1.5">
-                    <Ban className="w-3.5 h-3.5 text-rose-400" />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="px-3 py-1 rounded-full text-xs font-bold font-mono bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1.5 flex-shrink-0">
+                    <Ban className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
                     <span>THE WALK-AWAY PLAY (MAX DIGNITY)</span>
                   </span>
                   <span className="text-[11px] font-mono text-rose-400/90 font-semibold uppercase tracking-wider">
