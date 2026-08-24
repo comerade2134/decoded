@@ -603,9 +603,13 @@ export default function DecodedApp() {
   const canAnalyze = messages.trim().length > 0 || uploadedBase64 !== null;
 
   return (
-    <main className="w-full max-w-2xl lg:max-w-3xl mx-auto min-h-screen px-4 sm:px-6 py-6 sm:py-10 flex flex-col gap-6 ios-safe-top ios-safe-bottom relative touch-scroll transform-gpu">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-white/[0.08] pb-4 relative z-10">
+    <>
+      {/* iOS Safe Area & Dynamic Island Top Backdrop Shield */}
+      <div className="fixed top-0 left-0 right-0 h-[max(2.5rem,env(safe-area-inset-top))] bg-[#09090b]/95 backdrop-blur-md z-40 pointer-events-none border-b border-white/[0.04]" />
+
+      <main className="w-full max-w-2xl lg:max-w-3xl mx-auto min-h-screen px-4 sm:px-6 pt-7 sm:pt-10 pb-6 sm:pb-10 flex flex-col gap-6 ios-safe-top ios-safe-bottom relative touch-scroll transform-gpu">
+        {/* Header */}
+        <header className="flex items-center justify-between border-b border-white/[0.08] pb-4 relative z-10">
         <div className="flex items-center gap-3.5">
           <div className="w-11 h-11 rounded-2xl frosted-glass-subtle flex items-center justify-center border-white/[0.12] text-blue-400 shadow-md">
             <BrainCircuit className="w-6 h-6" />
@@ -1554,5 +1558,6 @@ export default function DecodedApp() {
         </div>
       </footer>
     </main>
+    </>
   );
 }

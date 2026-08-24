@@ -232,25 +232,29 @@ ${
    - "internalMonologue": The OTHER person's private, unfiltered thoughts as they typed their messages.
    - "safePlay.reply" & "boldPlay.reply": The messages that the USER should send back to THEM from a calm, grounded, high-frame position.
 
-2. ⏱️ STRATEGIC TIMING DISCIPLINE:
+2. 🔍 LITERAL CONTEXT OVERRIDE:
+   - Regardless of whatever generic relationship tag was selected in the UI (even if "Talking Stage" was passed), ALWAYS interpret the REAL dynamic from the literal words!
+   - If someone says "komm mit mir wieder zusammen" (get back together), "gib mir eine chance", "ich kann nicht ohne dich", or "ich vermisse dich", this is an EX/RECONCILIATION PLEA. Do NOT misinterpret "probieren" or "versuch" as trying a casual new activity! It is literally pleading to restart a broken relationship.
+
+3. ⏱️ STRATEGIC TIMING DISCIPLINE:
    - When the other person is sending desperate, frantic, or pleading messages, NEVER prescribe "immediate" timing.
    - Prescribe composed timing (e.g. "Wait 2–4 hours or reply tomorrow morning so the emotional storm calms down and you do not react from impulse").
 
-3. 🌍 LANGUAGE MATCHING & AUTHENTIC CONVERSATIONAL GERMAN:
+4. 🌍 LANGUAGE MATCHING & AUTHENTIC CONVERSATIONAL GERMAN:
    - If the conversation is in German, generate "safePlay.reply" and "boldPlay.reply" in 100% natural, casual German:
-     * Safe Play: e.g. "hey, danke für deine ehrlichkeit. lass uns morgen kurz in ruhe telefonieren"
+     * Safe Play: e.g. "hey, danke für deine ehrlichkeit. lass uns morgen in ruhe telefonieren"
      * Bold Play: e.g. "ich verstehe dich, aber betteln bringt nix. lass uns das persönlich besprechen"
    - NEVER use awkward robotic translations like "ich bin nicht dein problem" or "wir brauchen klare abgrenzung". Use natural, modern conversational phrasing.
    - If the conversation is in English, generate natural, effortless English replies.
 
-4. 🛑 "WALK AWAY" DIGNITY DIAGNOSTIC:
+5. 🛑 "WALK AWAY" DIGNITY DIAGNOSTIC:
    - If the dynamic is "Fading", if the other person is manipulative, toxic, boundary-crossing, or repeatedly low-effort, generate a "walkAwayOption".
    - "isRecommended": Set to true if holding firm boundaries or leaving on read is the highest-status move.
    - "triggerReason": Why holding frame is warranted.
    - "dignityRule": The psychological principle of why holding frame protects dignity.
    - "reEngagementCondition": The exact rule for when the user should ever re-engage.
 
-5. 💬 ZERO-CRINGE SYNTAX CONSTRAINTS:
+6. 💬 ZERO-CRINGE SYNTAX CONSTRAINTS:
    - Length: Strictly 5 to 12 words max (unless Fast & Punchy is enabled, then 3-7 words).
    - Casing & Punctuation: Casual, natural modern phrasing. Zero double exclamation marks (!!).
    - Emojis: Strictly banned. Never use cringe romantic emojis (no 😋, 😉, 🌹, 🥺, 😏, ❤️).
